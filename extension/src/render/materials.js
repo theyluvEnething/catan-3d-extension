@@ -94,20 +94,34 @@ function normalFromCanvas(srcCanvas, strength = 1) {
   return out;
 }
 
+// Earthy side color per resource (the exposed "soil" band under the tile top).
+const SIDE_COLOR = {
+  [RESOURCE.DESERT]: 0xb89a5e, [RESOURCE.WOOD]: 0x5b4327, [RESOURCE.BRICK]: 0x7a3b22,
+  [RESOURCE.SHEEP]: 0x6b5a34, [RESOURCE.WHEAT]: 0x8a6a2a, [RESOURCE.ORE]: 0x545a63,
+};
+
 const _cache = new Map();
+/**
+ * Returns [topMaterial, sideMaterial] for a hex prism. ExtrudeGeometry assigns group 0 to the
+ * top/bottom caps (textured resource) and group 1 to the extruded sides (clean earth band),
+ * which removes the ugly bevel-stripe banding from the sides.
+ */
 export function makeTileMaterial(type) {
-  if (_cache.has(type)) return _cache.get(type).clone();
-  const texCanvas = drawResourceTexture(type);
-  const map = new THREE.CanvasTexture(texCanvas);
-  map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
-  const normalMap = new THREE.CanvasTexture(normalFromCanvas(texCanvas, PALETTE[type].relief * 2.2));
-  const mat = new THREE.MeshStandardMaterial({
-    map, normalMap, normalScale: new THREE.Vector2(0.8, 0.8),
-    roughness: type === RESOURCE.ORE ? 0.6 : 0.92,
-    metalness: type === RESOURCE.ORE ? 0.12 : 0.02,
-  });
-  _cache.set(type, mat);
-  return mat.clone();
+  if (!_cache.has(type)) {
+    const texCanvas = drawResourceTexture(type);
+    const map = new THREE.CanvasTexture(texCanvas);
+    map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
+    const normalMap = new THREE.CanvasTexture(normalFromCanvas(texCanvas, PALETTE[type].relief * 2.2));
+    const top = new THREE.MeshStandardMaterial({
+      map, normalMap, normalScale: new THREE.Vector2(0.8, 0.8),
+      roughness: type === RESOURCE.ORE ? 0.62 : 0.92,
+      metalness: type === RESOURCE.ORE ? 0.12 : 0.02,
+    });
+    const side = new THREE.MeshStandardMaterial({ color: SIDE_COLOR[type], roughness: 0.98, metalness: 0.02 });
+    _cache.set(type, [top, side]);
+  }
+  const [t, s] = _cache.get(type);
+  return [t.clone(), s.clone()];
 }
 
 export function makeNumberTexture(n, isHot) {
@@ -124,15 +138,30 @@ export function makeNumberTexture(n, isHot) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-export function makeWaterMaterial() {
-  // Subtle rippled water via a procedural normal map + blueish PBR.
-  const c = canvas(256); const g = c.getContext("2d"); const rand = rng(7);
-  g.fillStyle = "#1d4e73"; g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 1400; i++) { g.globalAlpha = 0.05 + rand() * 0.05; g.fillStyle = rand() > 0.5 ? "#2f6f9c" : "#12405f"; g.beginPath(); g.arc(rand() * 256, rand() * 256, 1 + rand() * 2, 0, 7); g.fill(); }
+export function makeSandMaterial() {
+  const c = canvas(256); const g = c.getContext("2d"); const rand = rng(31);
+  g.fillStyle = "#dcc793"; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 2200; i++) { g.globalAlpha = 0.05 + rand() * 0.08; g.fillStyle = rand() > 0.5 ? "#c9b27a" : "#eaddb6"; g.beginPath(); g.arc(rand() * 256, rand() * 256, 0.6 + rand() * 1.6, 0, 7); g.fill(); }
   g.globalAlpha = 1;
-  const map = new THREE.CanvasTexture(c); map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(6, 6); map.colorSpace = THREE.SRGBColorSpace;
-  const normalMap = new THREE.CanvasTexture(normalFromCanvas(c, 1.4)); normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping; normalMap.repeat.set(6, 6);
-  return new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(0.35, 0.35), roughness: 0.32, metalness: 0.1, color: 0x2a5f86 });
+  const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(3, 3);
+  const normalMap = new THREE.CanvasTexture(normalFromCanvas(c, 0.6)); normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping; normalMap.repeat.set(3, 3);
+  return new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(0.3, 0.3), roughness: 1, metalness: 0 });
+}
+
+export function makeWaterMaterial() {
+  // Rippled sea. Brighter base + slight emissive so it reads as lit water (a plain PBR blue
+  // comes out near-black under grazing light). Normal map gives sparkle.
+  const c = canvas(256); const g = c.getContext("2d"); const rand = rng(7);
+  g.fillStyle = "#2f7bb0"; g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 1600; i++) { g.globalAlpha = 0.06 + rand() * 0.07; g.fillStyle = rand() > 0.5 ? "#4f9dcf" : "#1f5f8c"; g.beginPath(); g.arc(rand() * 256, rand() * 256, 1 + rand() * 2.4, 0, 7); g.fill(); }
+  g.globalAlpha = 1;
+  const map = new THREE.CanvasTexture(c); map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(12, 12); map.colorSpace = THREE.SRGBColorSpace;
+  const normalMap = new THREE.CanvasTexture(normalFromCanvas(c, 1.6)); normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping; normalMap.repeat.set(12, 12);
+  return new THREE.MeshStandardMaterial({
+    map, normalMap, normalScale: new THREE.Vector2(0.45, 0.45),
+    roughness: 0.35, metalness: 0.1, color: 0x3f8fc4,
+    emissive: 0x14384f, emissiveIntensity: 0.55,
+  });
 }
 
 // Colonist player color id -> a nice PBR color for pieces.

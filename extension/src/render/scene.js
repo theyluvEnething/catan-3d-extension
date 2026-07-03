@@ -12,7 +12,7 @@
 import * as THREE from "../../vendor/three.module.js";
 import { OrbitControls } from "../../vendor/OrbitControls.js";
 import { hexCenter, hexCorners, cornerPosExact, edgePos, edgeCorners } from "./boardGeometry.js";
-import { makeTileMaterial, RESOURCE, makeNumberTexture, makeWaterMaterial, playerColor } from "./materials.js";
+import { makeTileMaterial, RESOURCE, makeNumberTexture, makeWaterMaterial, makeSandMaterial, playerColor } from "./materials.js";
 
 const HEX_R = 1;           // hex circumradius in world units
 const HEX_H = 0.28;        // hex prism extrude depth
@@ -56,7 +56,9 @@ export class BoardScene {
     const h = height || container.clientHeight || 600;
 
     // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    // alpha configurable: opaque (sky background) for standalone; transparent for overlay.
+    const transparent = this._transparent = false;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: transparent, powerPreference: "high-performance" });
     renderer.setSize(w, h);
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
@@ -67,11 +69,10 @@ export class BoardScene {
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
 
-    // Scene + fog for depth
+    // Scene + fog for depth. Solid sky-blue background (reliable across contexts). In the
+    // live extension this can be set to null to let the page show through around the island.
     const scene = new THREE.Scene();
-    // Vertical sky gradient background (drawn to a canvas texture). Can be swapped for
-    // transparent (null) when overlaying the live page in the extension.
-    scene.background = makeSkyTexture();
+    scene.background = new THREE.Color(0x8fc3ea);
     this.scene = scene;
 
     // Camera
@@ -130,24 +131,23 @@ export class BoardScene {
 
   _setupEnvironment() {
     const { scene } = this;
-    // Large water plane under the island, sitting just below the tile bottoms.
-    const water = new THREE.Mesh(new THREE.CircleGeometry(30, 96), makeWaterMaterial());
+    // Big rippled sea plane. Sits below the sandy island; extends to the horizon/fog.
+    const water = new THREE.Mesh(new THREE.CircleGeometry(60, 128), makeWaterMaterial());
     water.rotation.x = -Math.PI / 2;
-    water.position.y = -0.06;
+    water.position.y = -0.35;
     water.receiveShadow = true;
     scene.add(water);
     this.water = water;
 
-    // Sandy shore ring hugging the island so tiles don't float on open water.
-    const shore = new THREE.Mesh(
-      new THREE.RingGeometry(0, 6.4, 64),
-      new THREE.MeshStandardMaterial({ color: 0xd8c48c, roughness: 1, transparent: true, opacity: 0.9 })
-    );
-    shore.rotation.x = -Math.PI / 2; shore.position.y = -0.04; shore.receiveShadow = true;
-    scene.add(shore);
-    this.shore = shore;
+    // Island base: a shallow sandy disc the tiles rest on, tapering to a beach edge that meets
+    // the water. Sized to hug the hex board so open sea is visible around it.
+    const sandTex = makeSandMaterial();
+    const island = new THREE.Mesh(new THREE.CylinderGeometry(5.3, 4.6, 0.5, 96), sandTex);
+    island.position.y = -0.27; island.receiveShadow = true;
+    scene.add(island);
+    this.island = island;
 
-    scene.fog = new THREE.Fog(0x3a6a92, 30, 60);
+    scene.fog = new THREE.Fog(0x8fc3ea, 38, 90);
   }
 
   // Convert board-space (u,v) to world (x,z). Board v grows "down" in 2D; map to +z.
@@ -319,15 +319,15 @@ export class BoardScene {
     const mx = (ax + bx) / 2, mz = (az + bz) / 2;
     const len = Math.hypot(bx - ax, bz - az);
     const col = playerColor(edge.owner);
+    const h = 0.12;
     const bar = new THREE.Mesh(
-      new THREE.BoxGeometry(len * 0.78, 0.16, 0.17),
-      new THREE.MeshStandardMaterial({ color: col, roughness: 0.45, metalness: 0.06 })
+      new THREE.BoxGeometry(len * 0.8, h, 0.15),
+      new THREE.MeshStandardMaterial({ color: col, roughness: 0.42, metalness: 0.06 })
     );
-    bar.castShadow = true; bar.receiveShadow = true;
-    // subtle end caps for a plank look
+    bar.position.y = h / 2; bar.castShadow = true; bar.receiveShadow = true;
     const grp = new THREE.Group();
-    bar.position.set(0, 0, 0); grp.add(bar);
-    grp.position.set(mx, TILE_TOP + 0.02, mz);
+    grp.add(bar);
+    grp.position.set(mx, TILE_TOP + 0.005, mz);
     grp.rotation.y = -Math.atan2(bz - az, bx - ax);
     return grp;
   }
@@ -348,9 +348,9 @@ export class BoardScene {
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
     this.controls.target.copy(center);
-    const radius = Math.max(size.x, size.z) * 0.62;
-    // higher Y, closer in Z -> ~55° down-tilt
-    this.camera.position.set(center.x + radius * 0.15, center.y + radius * 1.9, center.z + radius * 1.15);
+    const radius = Math.max(size.x, size.z) * 0.78;
+    // higher Y, moderate Z -> ~52° down-tilt, pulled back so the sea shows around the island
+    this.camera.position.set(center.x + radius * 0.12, center.y + radius * 1.85, center.z + radius * 1.25);
     this.camera.lookAt(center);
     this.controls.update();
   }
