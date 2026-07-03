@@ -1,0 +1,17 @@
+{
+  "name": "catan-3d-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright harness for driving Colonist.io during dev",
+  "scripts": {
+    "capture": "node capture.js",
+    "start-game": "node start-game.js"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.0.0-beta2",
+    "playwright": "^1.61.1",
+    "pngjs": "^7.0.0",
+    "three": "^0.180.0"
+  }
+}

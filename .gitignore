@@ -1,0 +1,16 @@
+# Dedicated Chrome profile (contains your Colonist login — never commit)
+.colonist-profile/
+
+# Node
+node_modules/
+harness/node_modules/
+
+# Captured frame dumps & screenshots can get large; keep the dir, ignore bulk contents
+debug/frames/*
+!debug/frames/.gitkeep
+debug/screenshots/*
+!debug/screenshots/.gitkeep
+
+# OS
+Thumbs.db
+.DS_Store

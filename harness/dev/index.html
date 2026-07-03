@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf8">
+<title>Catan 3D — dev preview</title>
+<style>
+  html,body{margin:0;height:100%;background:linear-gradient(#123049,#0a1a28);overflow:hidden;font-family:system-ui}
+  #app{position:fixed;inset:0}
+  #info{position:fixed;top:8px;right:10px;color:#cfe;font:12px monospace;opacity:.7}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="info">Catan 3D diorama — drag to orbit, scroll to zoom</div>
+<script type="module">
+import { BoardScene } from "../../extension/src/render/scene.js";
+
+// Build a minimal state facade matching what BoardScene reads.
+const raw = await (await fetch("./devstate.json")).json();
+const objVals = (o) => Object.entries(o || {}).map(([idx, v]) => ({ index: Number(idx), ...v }));
+const state = {
+  ready: true,
+  us: raw.us,
+  robberTileIndex: raw.robber,
+  gameState: { mapState: raw.mapState, mechanicRobberState: { locationTileIndex: raw.robber } },
+  get hexes() { return objVals(raw.mapState.tileHexStates); },
+  get ports() { return objVals(raw.mapState.portEdgeStates); },
+};
+
+const app = document.getElementById("app");
+const scene = new BoardScene(app, { width: innerWidth, height: innerHeight });
+scene.buildBoard(state);
+scene.syncPieces(state);
+window.addEventListener("resize", () => scene.resize(innerWidth, innerHeight));
+window.__scene = scene;
+window.__ready = true;
+</script>
+</body>
+</html>

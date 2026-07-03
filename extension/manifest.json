@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Catan 3D — Colonist.io 3D Board",
+  "version": "0.1.0",
+  "description": "Replaces Colonist.io's 2D board with a real-time 3D Three.js render.",
+  "minimum_chrome_version": "111",
+  "content_scripts": [
+    {
+      "matches": ["https://colonist.io/*", "https://www.colonist.io/*"],
+      "js": ["src/protocol/interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://colonist.io/*", "https://www.colonist.io/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/*", "vendor/*"],
+      "matches": ["https://colonist.io/*", "https://www.colonist.io/*"]
+    }
+  ]
+}
