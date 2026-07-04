@@ -154,12 +154,17 @@ Game-channel frame: `b0=3`, `channel = <serverId>` (e.g. "012634"), body =
 | **15** | **build settlement** | **cornerIndex** (index into tileCornerStates) |
 | **11** | **build road** | **edgeIndex** (index into tileEdgeStates) |
 | **2** | **discard card (on a 7)** | **`true`** — one frame per card; count = #cards discarded ✅ |
-| 🟡 47 | **city upgrade?** (confidence: low) | `true` — candidate from city capture, unconfirmed |
-| 🟡 6 | commit/confirm terminal? (confidence: low) | `true` — trailing frame in city capture, unconfirmed |
+| 🟡 6 | **end turn / pass** (confidence: med) | `true` — fires on every Spacebar-pass in main phase |
+| 🟡 3 | **move robber** (confidence: med) | hexIndex — captured when the robber moved (play-and-capture clone 42) |
+| 🟡 67 | subscribe/keepalive (channel string payload) | serverId — NOT a gameplay action |
+| ❓ city | city upgrade — still unisolated | (candidates 47/6 both overlap other actions) |
 
 > Payload is the **board index**, NOT a pixel — direct-send needs no calibration.
 > `action 2` (discard) uses payload `true`, NOT an index — it is a per-card confirm toggle.
-> Still TODO capture: dice roll, end-turn/pass, move-robber (+steal), buy dev card, trade.
+> Roll uses the **Spacebar** UI affordance (works without a direct-send id).
+> Still TODO isolate cleanly: city upgrade, steal-target, buy/play dev card, trade.
+> VERIFIED end-to-end: full **initial placement** (both settlements + both roads) plays via
+> our direct-send + legal-move engine with **zero desync** (harness setuptest).
 
 **Capture evidence:**
 - **discard = 2** ✅ (high): two isolated clone captures — `{action:2,payload:true}` appears
