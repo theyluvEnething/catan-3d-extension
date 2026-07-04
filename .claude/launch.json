@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "popup-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["harness/dev/static-server.cjs"],
+      "autoPort": true,
+      "port": 5199
+    }
+  ]
+}

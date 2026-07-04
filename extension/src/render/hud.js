@@ -42,7 +42,9 @@ export class DebugHUD {
     this.body = el.querySelector("#catan3d-hud-body");
   }
 
-  toggle() { this.visible = !this.visible; if (this.el) this.el.style.display = this.visible ? "block" : "none"; }
+  toggle() { this.setVisible(!this.visible); }
+
+  setVisible(v) { this.visible = !!v; if (this.el) this.el.style.display = this.visible ? "block" : "none"; }
 
   render(gs) {
     if (!this.body) return;

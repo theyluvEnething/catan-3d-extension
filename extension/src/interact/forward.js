@@ -205,8 +205,15 @@ export class Forwarder {
    * Show faint persistent markers on ALL legal targets for the current context, so the player
    * can see where they may build/move. Call reactively on state change. Cheap (reuses geometry).
    */
+  /** Toggle the faint legal-target rings on/off live (from popup settings). */
+  setMarkersEnabled(on) {
+    this._markersDisabled = !on;
+    try { this.refreshLegalMarkers(); } catch {}
+  }
+
   refreshLegalMarkers() {
     if (this._legalGroup) { this.scene.board.remove(this._legalGroup); this._legalGroup = null; }
+    if (this._markersDisabled) return; // markers turned off in settings
     const ctx = this._context();
     if (!ctx) return; // not our turn / nothing to do
     const pickables = this._pickablesForContext();

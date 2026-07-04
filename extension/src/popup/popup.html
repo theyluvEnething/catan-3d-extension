@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Catan 3D</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body class="w-[340px] bg-slate-950 text-slate-100 font-sans antialiased select-none overflow-hidden">
+  <!-- ambient glow -->
+  <div class="glow"></div>
+
+  <div class="relative z-10 p-4 flex flex-col gap-4">
+
+    <!-- Header -->
+    <header class="flex items-center gap-3">
+      <div class="logo">
+        <svg viewBox="0 0 100 100" class="w-6 h-6" aria-hidden="true">
+          <polygon points="50,20 79,36 79,58 50,74 21,58 21,36" fill="url(#hexTop)"/>
+          <polygon points="21,58 50,74 50,86 21,70" fill="#065f46"/>
+          <polygon points="79,58 50,74 50,86 79,70" fill="#0b7a5a"/>
+          <defs>
+            <linearGradient id="hexTop" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#6ee7b7"/>
+              <stop offset="1" stop-color="#34a878"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-[15px] font-semibold leading-none tracking-tight">Catan 3D</h1>
+        <p class="text-[11px] text-slate-400 leading-none mt-1">3D board for Colonist.io</p>
+      </div>
+      <span id="statusPill" class="pill pill-idle">
+        <span class="dot"></span><span id="statusText">Idle</span>
+      </span>
+    </header>
+
+    <!-- Master toggle (hero) -->
+    <button id="masterCard" class="master group" aria-pressed="true">
+      <div class="flex items-center gap-3">
+        <div id="masterIcon" class="master-icon">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/>
+          </svg>
+        </div>
+        <div class="text-left">
+          <div class="text-[13px] font-semibold leading-tight">3D Board</div>
+          <div id="masterSub" class="text-[11px] text-slate-400 leading-tight">Overlay is on</div>
+        </div>
+      </div>
+      <span class="switch"><span class="knob"></span></span>
+    </button>
+
+    <!-- Settings list -->
+    <section id="settings" class="rounded-2xl bg-slate-900/70 ring-1 ring-white/5 divide-y divide-white/5">
+
+      <div class="row">
+        <div class="row-label">
+          <span>Opacity</span>
+          <span id="opacityVal" class="row-value tabular-nums">100%</span>
+        </div>
+        <input id="opacity" type="range" min="20" max="100" value="100" class="slider" />
+      </div>
+
+      <label class="row row-toggle" for="transparentBg">
+        <div class="row-label"><span>Transparent background</span></div>
+        <span class="switch"><input id="transparentBg" type="checkbox" class="sr-only" /><span class="knob"></span></span>
+      </label>
+
+      <label class="row row-toggle" for="autoRotate">
+        <div class="row-label"><span>Auto-rotate camera</span></div>
+        <span class="switch"><input id="autoRotate" type="checkbox" class="sr-only" /><span class="knob"></span></span>
+      </label>
+
+      <label class="row row-toggle" for="showMarkers">
+        <div class="row-label"><span>Legal-move markers</span></div>
+        <span class="switch"><input id="showMarkers" type="checkbox" class="sr-only" /><span class="knob"></span></span>
+      </label>
+
+      <label class="row row-toggle" for="showHud">
+        <div class="row-label">
+          <span>Debug HUD</span>
+          <span class="row-value text-slate-500">Alt+H</span>
+        </div>
+        <span class="switch"><input id="showHud" type="checkbox" class="sr-only" /><span class="knob"></span></span>
+      </label>
+
+    </section>
+
+    <!-- Actions -->
+    <button id="resetCam" class="action">
+      <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.36 2.64L3 8"/><path d="M3 3v5h5"/>
+      </svg>
+      Reset camera
+    </button>
+
+    <!-- Footer / live stats -->
+    <footer class="grid grid-cols-2 gap-2">
+      <div class="stat">
+        <div class="stat-label">Turn</div>
+        <div id="statTurn" class="stat-value">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Sync</div>
+        <div id="statSync" class="stat-value">—</div>
+      </div>
+    </footer>
+
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
