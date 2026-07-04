@@ -142,8 +142,27 @@ Example decoded incoming (the initial game snapshot):
 - Heartbeat: `b0=4`, `{id:"136", data:{timestamp:<ms>}}` every ~1s.
 
 > 🟡 The robottler action-ID table (§0) referred to GAME-channel actions, not lobby. The
-> real game channel name + action map must be captured from in-game outgoing frames
-> (build/roll/etc.) — TBD in §3.
+> real game channel name + action map — CAPTURED from live play, see below.
+
+### ✅ OUTGOING GAME ACTIONS — captured from real placement (direct-send format)
+Game-channel frame: `b0=3`, `channel = <serverId>` (e.g. "012634"), body =
+`{action, payload, sequence}` where `sequence` increments per client message.
+
+| action | meaning | payload |
+|--------|---------|---------|
+| 66 | hover/preview a corner (mouse-move) | cornerIndex (null = un-hover) — cosmetic |
+| **15** | **build settlement** | **cornerIndex** (index into tileCornerStates) |
+| **11** | **build road** | **edgeIndex** (index into tileEdgeStates) |
+
+> Payload is the **board index**, NOT a pixel — direct-send needs no calibration.
+> TODO capture: city upgrade, move-robber (+steal), dev card, trade.
+
+### Interaction strategy decision (Phase 3) — DIRECT-SEND
+Synthetic in-page pointer events do **NOT** work: Colonist's WebGL input requires `isTrusted`
+events (dispatchEvent can't forge them). So placing pieces uses **DIRECT WEBSOCKET SEND**
+(action 15/11 with the board index), not coordinate-forwarding. The harness can still use
+Playwright trusted clicks for testing. The 3D→pixel calibration (§4) is kept for hover UX but
+is off the critical path.
 
 ---
 

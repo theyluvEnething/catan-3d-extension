@@ -57,14 +57,18 @@ export function buildInitScript() {
   if (document.body) mountHud(); else window.addEventListener("DOMContentLoaded", mountHud, {once:true});
 
   const rawLog = [];
-  function handle(dir, data) {
+  // Game-channel wiring for DIRECT SEND (Colonist requires trusted input events, so we place
+  // pieces by sending the real build message on the game socket instead of forwarding clicks).
+  const wire = { socket: null, channel: null, sequence: 0 };
+
+  function handle(dir, data, socket) {
     let frame;
     if (typeof data === "string") frame = { dir, kind:"text", text:data };
     else {
       let u8;
       if (data instanceof ArrayBuffer) u8 = new Uint8Array(data);
       else if (ArrayBuffer.isView(data)) u8 = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-      else if (data instanceof Blob) { data.arrayBuffer().then(b=>handle(dir, b)); return; }
+      else if (data instanceof Blob) { data.arrayBuffer().then(b=>handle(dir, b, socket)); return; }
       else return;
       frame = { dir, kind:"binary", bytes:u8 };
     }
@@ -72,7 +76,18 @@ export function buildInitScript() {
     rawLog.push({ dir:frame.dir, kind:frame.kind });
     try {
       const decoded = decodeFrame(frame);
-      if (decoded && decoded.dir === "in") state.applyIncoming(decoded);
+      if (decoded && decoded.dir === "in") {
+        state.applyIncoming(decoded);
+        // learn the game-channel serverId from the type-1 handshake payload.
+        if (decoded.id === "130" && decoded.type === 1 && decoded.payload && decoded.payload.serverId) {
+          wire.channel = decoded.payload.serverId; wire.socket = socket;
+        }
+      }
+      if (decoded && decoded.dir === "out" && decoded.b0 === 3 && decoded.channel) {
+        // track the game channel + latest outgoing sequence so our sends stay in order.
+        wire.channel = decoded.channel; wire.socket = socket;
+        if (decoded.body && typeof decoded.body.sequence === "number") wire.sequence = decoded.body.sequence;
+      }
       window.dispatchEvent(new CustomEvent("CATAN3D_HARNESS_FRAME", { detail:{ dir:frame.dir, kind:frame.kind } }));
     } catch(e) { /* rare undecodable frame */ }
   }
@@ -80,16 +95,33 @@ export function buildInitScript() {
   const Native = window.WebSocket;
   function Patched(...args){
     const s = new Native(...args);
-    s.addEventListener("message", ev => handle("in", ev.data));
+    s.addEventListener("message", ev => handle("in", ev.data, s));
     const send = s.send;
-    s.send = function(d){ handle("out", d); return send.apply(this, arguments); };
+    s.send = function(d){ handle("out", d, s); return send.apply(this, arguments); };
     return s;
   }
   Patched.prototype = Native.prototype;
   ["CONNECTING","OPEN","CLOSING","CLOSED"].forEach(k=>{ try{ Patched[k]=Native[k]; }catch{} });
   window.WebSocket = Patched;
 
-  window.__catan3d = { __installed:true, state, decodeFrame, rawLog,
+  // DIRECT SEND: place a piece by emitting the real build message on the game socket.
+  // action 15=settlement(cornerIndex), 11=road(edgeIndex). Returns the sequence used or an error.
+  function sendGameAction(action, payload) {
+    if (!wire.socket || !wire.channel) return { ok:false, error:"no game socket/channel yet" };
+    if (wire.socket.readyState !== 1) return { ok:false, error:"socket not open" };
+    const sequence = (wire.sequence || 0) + 1;
+    try {
+      const bytes = encodeChannel(wire.channel, action, payload, sequence);
+      wire.socket.send(bytes);          // goes through our wrapped send -> also updates wire.sequence
+      wire.sequence = sequence;
+      return { ok:true, action, payload, sequence, channel: wire.channel };
+    } catch (e) { return { ok:false, error: String(e && e.message || e) }; }
+  }
+
+  window.__catan3d = { __installed:true, state, decodeFrame, rawLog, sendGameAction,
+    wire: () => ({ channel: wire.channel, sequence: wire.sequence, open: wire.socket && wire.socket.readyState === 1 }),
+    buildSettlement: (cornerIndex) => sendGameAction(15, cornerIndex),
+    buildRoad: (edgeIndex) => sendGameAction(11, edgeIndex),
     snapshot: () => ({
       ready: state.ready, us: state.us, playOrder: state.playOrder,
       turn: state.currentTurnColor, phase: { turnState: state.turnState, actionState: state.actionState },

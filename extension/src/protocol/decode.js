@@ -272,14 +272,21 @@ export function decodeOutgoing(bytes) {
 }
 
 /**
- * Encode an OUTGOING channel message: [0x02][seq][strlen][channel][msgpack {action,payload}].
- * (Phase-3 direct-send fallback. Verify seq semantics before relying on this.)
+ * Encode an OUTGOING game-channel message. VERIFIED byte-exact against captured build frames:
+ *   [0x03][0x01][strlen][channel bytes][msgpack {action, payload, sequence}]
+ * The frame header byte is 0x03 (game channel) and byte[1] is 0x01 (constant on captured
+ * frames). `sequence` is the per-channel client counter and MUST be inside the msgpack body.
+ *
+ * @param channel  game serverId string (e.g. "012B34")
+ * @param action   action id (15=settlement, 11=road, ...)
+ * @param payload  board index (cornerIndex / edgeIndex) or null
+ * @param sequence per-channel outgoing counter (next value)
  */
-export function encodeChannel(channel, action, payload, seq = 2, b0 = 0x02) {
+export function encodeChannel(channel, action, payload, sequence, b0 = 0x03, hdr1 = 0x01) {
   const chan = (_textEncoder || { encode: (s) => Uint8Array.from(s, (c) => c.charCodeAt(0)) }).encode(channel);
-  const body = msgpackEncode({ action, payload });
+  const body = msgpackEncode({ action, payload, sequence });
   const out = new Uint8Array(3 + chan.length + body.length);
-  out[0] = b0; out[1] = seq; out[2] = chan.length;
+  out[0] = b0; out[1] = hdr1; out[2] = chan.length;
   out.set(chan, 3);
   out.set(body, 3 + chan.length);
   return out;
