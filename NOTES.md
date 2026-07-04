@@ -185,7 +185,16 @@ frame), or diff the webpack action-enum table from Colonist's own bundle.
 > Payload is the **board index**, NOT a pixel — direct-send needs no calibration.
 > `action 2` (discard) uses payload `true`, NOT an index — it is a per-card confirm toggle.
 > Roll uses the **Spacebar** UI affordance (works without a direct-send id).
-> Still TODO isolate cleanly: city upgrade, steal-target, buy/play dev card, trade.
+
+### Remaining un-captured actions (all blocked by the same cause)
+buy-dev-card, play-dev-card (knight/road-building/year-of-plenty/monopoly), steal-target-select,
+and create-trade/bank-trade. Each requires a game state we can't reach with only 2 settlements:
+buy-dev needs sheep+wheat+ore together, steal needs a victim on the robbed hex, bank-trade needs
+4 surplus of one resource. In an 8-min, 2-game capture we hit **zero** dev-affordable turns and
+**zero** steal opportunities — the same **resource-starvation** wall that blocks the autonomous
+win. These are captured trivially once the player can generate a resource surplus (which itself
+needs bank-trade — the one true blocker). The verified action set above already covers a full
+manual playthrough of the core loop (place/build/upgrade/rob/discard/end-turn).
 > VERIFIED end-to-end: full **initial placement** (both settlements + both roads) plays via
 > our direct-send + legal-move engine with **zero desync** (harness setuptest).
 
