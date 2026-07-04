@@ -107,12 +107,31 @@ export function buildInitScript() {
     } catch(e) { /* rare undecodable frame */ }
   }
 
+  // Outgoing-action log: decode every OUTGOING game frame ({action,payload,sequence}) so the
+  // harness can discover unknown action ids (e.g. buy-dev/play-dev) by correlating an action
+  // with the state change it produced. Ring-buffered.
+  const outActions = [];
+  function logOutgoing(d) {
+    try {
+      let u8 = null;
+      if (d instanceof ArrayBuffer) u8 = new Uint8Array(d);
+      else if (ArrayBuffer.isView(d)) u8 = new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+      if (!u8 || u8[0] !== 0x03) return;
+      const dec = decodeOutgoing(u8); // from decode.js: { action, payload, sequence, ... }
+      if (dec && dec.action != null) {
+        outActions.push({ action: dec.action, payload: dec.payload, sequence: dec.sequence, t: Date.now() });
+        if (outActions.length > 500) outActions.shift();
+        try { window.dispatchEvent(new CustomEvent("CATAN3D_OUT_ACTION", { detail: { action: dec.action, payload: dec.payload } })); } catch {}
+      }
+    } catch {}
+  }
+
   const Native = window.WebSocket;
   function Patched(...args){
     const s = new Native(...args);
     s.addEventListener("message", ev => handle("in", ev.data, s));
     const send = s.send;
-    s.send = function(d){ handle("out", d, s); return send.apply(this, arguments); };
+    s.send = function(d){ handle("out", d, s); logOutgoing(d); return send.apply(this, arguments); };
     return s;
   }
   Patched.prototype = Native.prototype;
@@ -134,6 +153,8 @@ export function buildInitScript() {
   }
 
   window.__catan3d = { __installed:true, state, decodeFrame, rawLog, sendGameAction, watchdog,
+    outActions,
+    outActionsSince: (t) => outActions.filter((a) => a.t >= t),
     desyncReport: () => watchdog.report(),
     wire: () => ({ channel: wire.channel, sequence: wire.sequence, open: wire.socket && wire.socket.readyState === 1 }),
     buildSettlement: (cornerIndex) => sendGameAction(15, cornerIndex),
