@@ -21,10 +21,10 @@ import {
   legalSettlementCorners, legalCityCorners, legalRoadEdges, legalRobberHexes,
 } from "./legal.js";
 
-// GAME-channel action codes. 15/11 are ✅ verified from live capture (NOTES §2.147); city &
-// robber are 🟡 unverified (robottler table) and only fire when explicitly enabled.
-const ACTION_BUILD_CITY = 28;  // 🟡 BUILD_CITY — unverified, guarded by allowUnverified
-const ACTION_MOVE_ROBBER = 16; // 🟡 MOVE_ROBBER — unverified, guarded by allowUnverified
+// GAME-channel action codes — ALL ✅ verified from live capture (NOTES: zero-desync set):
+// settlement 15, road 11, city 19, robber 3, discard 2, end-turn/pass 6, trade-response 50.
+const ACTION_BUILD_CITY = 19;  // ✅ BUILD_CITY (cornerIndex)
+const ACTION_MOVE_ROBBER = 3;  // ✅ MOVE_ROBBER (hexIndex)
 
 // Coord key for matching legal-target lists against pick targets. Robber targets (hexes) key
 // on (x,y) only; corners/edges key on (x,y,z).
@@ -232,16 +232,47 @@ export class Forwarder {
   }
 
   _onClick(ev) {
+    // If a confirm billboard is already up, a click elsewhere cancels it (the billboard's own
+    // click handler stops propagation, so reaching here means "clicked off").
+    if (this._billboard && this._billboard.isActive) { this._billboard.cancel(); return; }
     const ctx = this._context();
     if (!ctx) return;
     const pickables = this._pickablesForContext(); // already filtered to legal targets
     const hit = this._raycast(ev, pickables);
     if (!hit) return;
-    const { coord } = hit.userData;
+    const { coord, u, v } = hit.userData;
     const index = this._indexOf(coord, ctx);
     if (index < 0) { console.warn("[catan3d/forward] no index for target", coord, ctx); return; }
+    // Two-step confirm (matches Colonist's own popup): show a billboard above the spot; only on
+    // clicking IT do we direct-send. If no billboard is wired, fall back to immediate placement.
+    if (this._billboard) {
+      const worldY = ctx === "robber" ? 0.5 : (ctx === "road" ? 0.5 : 0.7);
+      const color = this.state.us;
+      this._billboard.show({ x: u, y: worldY, z: v }, ctx, color,
+        () => { this._place(ctx, index, coord); },
+        () => {});
+      return;
+    }
     return this._place(ctx, index, coord);
   }
+
+  /** Wire a ConfirmBillboard so clicks show a confirmation popup before sending. */
+  setBillboard(bb) { this._billboard = bb; }
+
+  /**
+   * Arm a build mode from the HUD tray ('settlement'|'city'|'road'). During the main phase this
+   * sets the forced context so clicks target that piece type and legal markers update. Returns
+   * true if the mode is currently placeable (your turn + legal targets exist).
+   */
+  armBuild(kind) {
+    this.setContext(kind);
+    try { this.refreshLegalMarkers(); } catch {}
+    const targets = this._pickablesForContext();
+    return targets.length > 0;
+  }
+
+  /** Clear any forced build mode (back to auto-detected context). */
+  disarm() { this._forcedContext = null; try { this.refreshLegalMarkers(); } catch {} }
 
   // Place a piece by DIRECT SEND: emit the real build message on the game socket via the
   // direct-send API. Returns the send result ({ok,...}) or an error object.
@@ -251,13 +282,9 @@ export class Forwarder {
     let res;
     if (ctx === "settlement") res = api.buildSettlement(index);
     else if (ctx === "road") res = api.buildRoad(index);
-    else if (ctx === "city") {
-      if (!this.allowUnverified) { console.warn("[catan3d/forward] city action unverified; enable allowUnverified to send"); return { ok: false, error: "city unverified" }; }
-      res = api.sendGameAction(ACTION_BUILD_CITY, index);
-    } else if (ctx === "robber") {
-      if (!this.allowUnverified) { console.warn("[catan3d/forward] robber action unverified; enable allowUnverified to send"); return { ok: false, error: "robber unverified" }; }
-      res = api.sendGameAction(ACTION_MOVE_ROBBER, index);
-    } else return { ok: false, error: "unknown context" };
+    else if (ctx === "city") res = api.sendGameAction(ACTION_BUILD_CITY, index);   // ✅ 19 verified
+    else if (ctx === "robber") res = api.sendGameAction(ACTION_MOVE_ROBBER, index); // ✅ 3 verified
+    else return { ok: false, error: "unknown context" };
     // Remember the settlement we just placed so setup road legality can key off it.
     if (ctx === "settlement" && res && res.ok) this._lastSettlement = coord;
     this._setHover(null); // clear highlight after a placement

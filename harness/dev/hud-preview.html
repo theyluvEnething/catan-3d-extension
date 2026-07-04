@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Catan 3D HUD preview</title>
+<link rel="stylesheet" href="../../extension/src/render/hud/gameHud.css" />
+<style>
+  html,body{margin:0;background:#2f6ea5;overflow:hidden;}
+  /* Fake the overlay box exactly: 1590x953 at left:165 in a 1920x953 window. */
+  #overlay{position:absolute;left:165px;top:0;width:1590px;height:953px;
+    background:radial-gradient(circle at 42% 46%, #3a7cae 0%, #2f6ea5 60%);}
+  /* A faint "board" hint so the HUD reads in context. */
+  #overlay::before{content:"";position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);
+    width:640px;height:560px;border-radius:50%;background:rgba(240,225,190,.12);}
+</style>
+</head>
+<body>
+<div id="overlay"></div>
+<script type="module">
+  import { GameState } from "../../extension/src/state/gameState.js";
+  import { GameModel } from "../../extension/src/state/gameModel.js";
+  import { GameHud } from "../../extension/src/render/hud/gameHud.js";
+
+  // Point the asset loader at the bundled files via a relative base (no chrome.runtime here).
+  // assets.js falls back to ../../assets/colonist/<file> when chrome is absent — but our page is
+  // under harness/dev/, so shim chrome.runtime.getURL to resolve against the extension folder.
+  window.chrome = { runtime: { getURL: (p) => new URL("../../extension/" + p, location.href).href } };
+
+  const snapshot = await (await fetch("../../debug/hud/snapshot.json")).json();
+  const diffs = (await (await fetch("../../debug/hud/diffs.jsonl")).text()).trim().split("\n").map(l => JSON.parse(l));
+
+  const gs = new GameState();
+  gs.applyIncoming({ id: "130", type: 4, payload: { playerColor: 1, playOrder: [2,1,3,4], gameState: snapshot,
+    playerUserStates: [
+      { color: 2, username: "Riley", isBot: true }, { color: 1, username: "Enething", isBot: false },
+      { color: 3, username: "Emilio", isBot: true }, { color: 4, username: "Guise", isBot: true },
+    ] } });
+  const model = new GameModel(gs);
+  const hud = new GameHud(document.getElementById("overlay"), { onAction: (k) => console.log("action", k) });
+
+  // Apply how ever many diffs are requested via ?n=, default all.
+  const n = new URLSearchParams(location.search).get("n");
+  const count = n ? Math.min(+n, diffs.length) : diffs.length;
+  for (let i = 0; i < count; i++) gs.applyIncoming({ id: "130", type: 91, payload: { diff: diffs[i] } });
+  await hud.update(model.snapshot);
+  hud.setTimer(248);
+  window.__ready = true;
+  console.log("HUD preview ready; players:", model.snapshot.players.map(p=>p.name+":"+p.vp).join(", "));
+</script>
+</body>
+</html>

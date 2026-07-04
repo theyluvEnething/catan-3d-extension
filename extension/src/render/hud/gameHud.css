@@ -1,0 +1,89 @@
+/* gameHud.css — faithful rebuild of Colonist's in-game UI, laid out over the 3D overlay.
+ *
+ * The overlay box matches #ui-game (1590×953 @ left:165). We pin three regions to it: a
+ * top-left icon rail, a right column (bank bar + player panels), and a bottom card tray +
+ * action buttons. Palette + shapes mirror Colonist (light-blue button plates, beige panels).
+ * All interactive; the tray buttons drive the 3D placement flow. */
+
+.c3d-hud { position: absolute; inset: 0; pointer-events: none; font-family: "Nunito", "Segoe UI", system-ui, sans-serif; color: #2b2b2b; z-index: 6; }
+.c3d-hud * { box-sizing: border-box; }
+.c3d-hud button { font-family: inherit; }
+.c3d-hud .pe { pointer-events: auto; }
+
+/* ---- top-left icon rail --------------------------------------------------------------------- */
+.c3d-rail { position: absolute; left: 10px; top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.c3d-rail .ico { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; cursor: pointer;
+  background: rgba(255,255,255,.14); transition: background .15s, transform .06s; }
+.c3d-rail .ico:hover { background: rgba(255,255,255,.28); }
+.c3d-rail .ico:active { transform: scale(.94); }
+.c3d-rail .ico img, .c3d-rail .ico svg { width: 22px; height: 22px; display: block; }
+
+/* ---- right column --------------------------------------------------------------------------- */
+.c3d-right { position: absolute; right: 8px; top: 10px; width: 366px; display: flex; flex-direction: column; gap: 8px; }
+
+/* bank bar */
+.c3d-bank { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 12px;
+  background: #f4ecd8; box-shadow: 0 2px 6px rgba(0,0,0,.25), inset 0 0 0 1px rgba(0,0,0,.06); }
+.c3d-bank .bank-ico { width: 30px; height: 30px; flex: none; }
+.c3d-bank .res { display: flex; align-items: center; gap: 3px; font-weight: 800; font-size: 16px; color: #3a3a3a; }
+.c3d-bank .res img { width: 24px; height: 33px; object-fit: contain; border-radius: 3px; }
+.c3d-bank .devcount { margin-left: auto; display: flex; align-items: center; gap: 3px; font-weight: 800; font-size: 16px; }
+.c3d-bank .devcount img { width: 24px; height: 33px; border-radius: 3px; }
+
+/* a player panel */
+.c3d-players { display: flex; flex-direction: column; gap: 6px; }
+.c3d-player { position: relative; display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 8px; border-radius: 12px;
+  background: #e9e2d0; box-shadow: 0 2px 5px rgba(0,0,0,.22), inset 0 0 0 1px rgba(0,0,0,.05);
+  border-left: 6px solid var(--pc, #888); overflow: hidden; }
+.c3d-player.you { background: #efeadd; }
+.c3d-player.turn { box-shadow: 0 0 0 2px #ffd34d, 0 2px 8px rgba(0,0,0,.3); }
+.c3d-player.disc { opacity: .55; filter: grayscale(.4); }
+.c3d-avatar { width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: var(--pc, #888); color: #fff; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+.c3d-avatar img { width: 22px; height: 22px; filter: brightness(0) invert(1); }
+.c3d-pname { min-width: 0; }
+.c3d-pname .nm { font-weight: 800; font-size: 13px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 96px; }
+.c3d-pname .bot { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: #6b6b6b; font-weight: 700; }
+.c3d-pname .bot img { width: 12px; height: 12px; }
+.c3d-counts { display: flex; align-items: center; gap: 9px; margin-left: auto; }
+.c3d-chip { display: flex; align-items: center; gap: 3px; font-weight: 800; font-size: 14px; color: #333; }
+.c3d-chip img { width: 17px; height: 24px; object-fit: contain; }
+.c3d-chip.small img { width: 15px; height: 15px; }
+.c3d-award { width: 20px; height: 20px; opacity: .9; }
+.c3d-award.off { opacity: .18; filter: grayscale(1); }
+.c3d-vp { width: 30px; height: 30px; flex: none; border-radius: 8px; display: grid; place-items: center; margin-left: 2px;
+  background: #caa14e; color: #3a2a08; font-weight: 900; font-size: 16px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+
+/* ---- bottom tray ---------------------------------------------------------------------------- */
+.c3d-bottom { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+/* status pill + timer */
+.c3d-status { display: flex; align-items: center; gap: 8px; }
+.c3d-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; font-weight: 800; font-size: 14px;
+  background: #f4ecd8; color: #3a3a3a; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+.c3d-pill .who { width: 20px; height: 20px; border-radius: 50%; background: var(--pc,#888); }
+.c3d-timer { padding: 7px 12px; border-radius: 10px; background: #d9e7ef; color: #2b3a44; font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+
+/* card hand + actions row */
+.c3d-tray { display: flex; align-items: flex-end; gap: 10px; }
+.c3d-hand { display: flex; align-items: flex-end; }
+.c3d-hand .card { width: 46px; height: 66px; margin-left: -14px; border-radius: 7px; box-shadow: 0 3px 8px rgba(0,0,0,.35);
+  transition: transform .12s; background-size: cover; background-position: center; }
+.c3d-hand .card:first-child { margin-left: 0; }
+.c3d-hand .card:hover { transform: translateY(-8px); }
+.c3d-actions { display: flex; align-items: center; gap: 6px; }
+.c3d-act { width: 62px; height: 62px; border: 0; border-radius: 12px; cursor: pointer; position: relative;
+  background-image: var(--plate); background-size: 100% 100%; display: grid; place-items: center;
+  transition: transform .07s, filter .12s; }
+.c3d-act:hover { filter: brightness(1.07); }
+.c3d-act:active { transform: scale(.95); }
+.c3d-act[disabled] { filter: grayscale(.7) brightness(.9); opacity: .55; cursor: not-allowed; }
+.c3d-act.armed { box-shadow: 0 0 0 3px #57d06a, 0 2px 8px rgba(0,0,0,.3); }
+.c3d-act img, .c3d-act svg { width: 38px; height: 38px; pointer-events: none; }
+.c3d-act .badge { position: absolute; right: 3px; bottom: 2px; font-size: 12px; font-weight: 900; color: #2b2b2b;
+  background: #fff; border-radius: 6px; padding: 0 4px; min-width: 16px; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.c3d-act .cost { position: absolute; left: 50%; top: -20px; transform: translateX(-50%); font-size: 10px; font-weight: 800;
+  white-space: nowrap; color: #eee; text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity .12s; }
+.c3d-act:hover .cost { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) { .c3d-hud * { transition: none !important; } }

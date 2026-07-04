@@ -12,6 +12,8 @@ debug/frames/*
 !debug/frames/.gitkeep
 debug/screenshots/*
 !debug/screenshots/.gitkeep
+# Raw HUD/state captures (session-specific, produced by harness/probe-hud.js)
+debug/hud/
 
 # OS
 Thumbs.db

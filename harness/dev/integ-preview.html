@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Catan 3D integration preview</title>
+<link rel="stylesheet" href="../../extension/src/render/hud/gameHud.css" />
+<style>
+  html,body{margin:0;background:#2f6ea5;overflow:hidden;}
+  #overlay{position:absolute;left:165px;top:0;width:1590px;height:953px;}
+  #overlay canvas{display:block;width:100%;height:100%;}
+</style>
+</head>
+<body>
+<div id="overlay"></div>
+<script type="module">
+  window.chrome = { runtime: { getURL: (p) => new URL("../../extension/" + p, location.href).href } };
+  const B = "../../extension/";
+  const { GameState } = await import(B + "src/state/gameState.js");
+  const { GameModel } = await import(B + "src/state/gameModel.js");
+  const { BoardScene } = await import(B + "src/render/scene.js");
+  const { Forwarder } = await import(B + "src/interact/forward.js");
+  const { ConfirmBillboard } = await import(B + "src/interact/billboard.js");
+  const { GameHud } = await import(B + "src/render/hud/gameHud.js");
+
+  const snapshot = await (await fetch("../../debug/hud/snapshot.json")).json();
+  const gs = new GameState();
+  gs.applyIncoming({ id:"130", type:4, payload:{ playerColor:1, playOrder:[2,1,3,4], gameState: snapshot,
+    playerUserStates:[{color:2,username:"Riley",isBot:true},{color:1,username:"Enething",isBot:false},{color:3,username:"Emilio",isBot:true},{color:4,username:"Guise",isBot:true}] }});
+  const model = new GameModel(gs);
+
+  const overlay = document.getElementById("overlay");
+  const scene = new BoardScene(overlay, { width: 1590, height: 953 });
+  scene.renderer.domElement.style.pointerEvents = "auto";
+  scene.setBackgroundTransparent(false);
+  // build the board from state
+  scene.buildBoard(gs); scene.syncPieces(gs);
+
+  const fwd = new Forwarder(scene, gs, { send: { sendGameAction:()=>({ok:true}), buildSettlement:()=>({ok:true}), buildRoad:()=>({ok:true}) } });
+  const bb = new ConfirmBillboard(overlay, scene);
+  fwd.setBillboard(bb);
+  const hud = new GameHud(overlay, { onAction:(k)=>{ window.__lastAction=k; if(["settlement","city","road"].includes(k)){ fwd.armBuild(k); hud.setArmed(k);} } });
+  model.subscribe(()=>hud.update(model.snapshot)); await hud.update(model.snapshot);
+  hud.setTimer(248);
+
+  // Expose for the shot script to drive a billboard.
+  window.__demo = {
+    showBillboard: async () => {
+      // place a settlement billboard over an arbitrary corner in world space
+      const { cornerPosExact } = await import(B + "src/render/boardGeometry.js");
+      // pick corner 0's world pos
+      const corners = gs.corners; const c = corners[10] || corners[0];
+      const p = cornerPosExact ? cornerPosExact(c.x, c.y, c.z) : { u: 0, v: 0 };
+      await bb.show({ x: p.u ?? p.x ?? 0, y: 0.7, z: p.v ?? p.z ?? 0 }, "settlement", 1, ()=>{}, ()=>{});
+    },
+  };
+  window.__ready = true;
+  console.log("integ ready", model.snapshot.players.map(p=>p.name+":"+p.vp).join(","));
+</script>
+</body>
+</html>

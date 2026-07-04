@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   transparentBg: false,   // let the page show through around the island
   autoRotate: false,      // slow idle camera orbit
   showHud: false,         // debug state HUD (Alt+H also toggles)
+  showGameHud: true,      // faithful rebuilt in-game HUD (panels + tray)
   showMarkers: true,      // faint legal-target rings on your turn
 };
 

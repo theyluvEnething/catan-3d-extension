@@ -27,7 +27,55 @@
   let settings = null;
   let board = null;       // mount handle (scene + overlay)
   let forwarder = null;
+  let gameModel = null;   // faithful "internal copy" over gameState
+  let gameHud = null;     // faithful rebuilt HUD
   const onSettingsCbs = [];
+
+  // Dev-card action ids are NOT yet verified from live capture (the probe recorded only incoming
+  // diffs, not our outgoing buy/play frames). Keep them null so we never emit a guessed action;
+  // the confirm billboard still shows (correct UX), but the send is skipped + logged until known.
+  const ACTION_BUY_DEV = null;   // TODO: capture the outgoing buy-dev frame to fill this in.
+
+  // Handle a click on a rebuilt HUD control. Build buttons arm 3D placement (then the billboard
+  // confirms); dev buys after a confirm; end-turn/trade/roll route to verified sends or shortcuts.
+  function onHudAction(kind, bb) {
+    if (!forwarder) return;
+    switch (kind) {
+      case "settlement": case "city": case "road": {
+        const ok = forwarder.armBuild(kind);
+        if (gameHud) gameHud.setArmed(kind);
+        if (!ok) console.info(TAG, `no legal ${kind} targets right now`);
+        break;
+      }
+      case "endturn": {
+        // end-turn / pass = action 6 (verified). Clear any armed build first.
+        forwarder.disarm(); if (gameHud) gameHud.setArmed(null);
+        window.__catan3d.send?.sendGameAction(6, true);
+        break;
+      }
+      case "dev": {
+        // Buy a dev card — show the confirm billboard (the "are you sure" second click). Only
+        // actually send once the buy-dev action id is verified; otherwise log the intent.
+        if (!board?.scene) break;
+        bb.show({ x: 0, y: 1.2, z: 0 }, "dev", gameModel?.snapshot?.us,
+          () => {
+            if (ACTION_BUY_DEV != null) window.__catan3d.send?.sendGameAction(ACTION_BUY_DEV, true);
+            else console.info(TAG, "buy-dev confirmed (action id not yet verified — not sent)");
+          },
+          () => {});
+        break;
+      }
+      case "trade": {
+        // Trade UI is Colonist's own (unsolved bank-trade); surface Colonist's panel by
+        // temporarily un-hiding its canvas UI is out of scope — log for now.
+        console.info(TAG, "trade: use Colonist's native trade panel (bank-trade unsolved)");
+        break;
+      }
+      // Icon rail — settings opens the popup conceptually; others are cosmetic no-ops here.
+      case "settings": case "book": case "fullscreen": case "info": break;
+      default: break;
+    }
+  }
 
   async function boot() {
     try {
@@ -86,12 +134,20 @@
       };
       window.__catan3d.send = sendApi;
 
+      // Build the faithful game model (the "internal copy") over the raw state — used by the HUD.
+      const { GameModel } = await import(chrome.runtime.getURL("src/state/gameModel.js"));
+      gameModel = new GameModel(gameState);
+      window.__catan3d.model = gameModel;
+      window.__catan3d.modelSnapshot = () => gameModel.snapshot;
+
       // Mount the 3D board + interaction layer once the game canvas exists. Gated on the
       // `enabled` setting; toggling `enabled` in the popup mounts/unmounts live.
       Promise.all([
         import(chrome.runtime.getURL("src/render/mount.js")),
         import(chrome.runtime.getURL("src/interact/forward.js")),
-      ]).then(([{ mountBoard }, { Forwarder }]) => {
+        import(chrome.runtime.getURL("src/interact/billboard.js")),
+        import(chrome.runtime.getURL("src/render/hud/gameHud.js")),
+      ]).then(([{ mountBoard }, { Forwarder }, { ConfirmBillboard }, { GameHud }]) => {
         let iv = null;
         const tryMount = () => {
           if (board) return;
@@ -103,8 +159,18 @@
               try {
                 forwarder = new Forwarder(board.scene, gameState, { send: sendApi });
                 window.__catan3d.forwarder = forwarder;
-                console.info(TAG, "3D board + interaction mounted");
-              } catch (e) { console.warn(TAG, "forwarder init failed", e); }
+                // Confirmation billboard (Colonist-style "second click" popup) over the overlay.
+                const bb = new ConfirmBillboard(board.overlay, board.scene);
+                forwarder.setBillboard(bb);
+                window.__catan3d.billboard = bb;
+                // Faithful HUD rebuilt in the overlay (replaces the panels the overlay covers).
+                gameHud = new GameHud(board.overlay, { onAction: (kind) => onHudAction(kind, bb) });
+                window.__catan3d.gameHud = gameHud;
+                gameHud.setVisible(settings.showGameHud !== false);
+                const renderHud = () => { try { gameHud.update(gameModel.snapshot); } catch (e) {} };
+                gameModel.subscribe(renderHud); renderHud();
+                console.info(TAG, "3D board + HUD + interaction mounted");
+              } catch (e) { console.warn(TAG, "forwarder/hud init failed", e); }
               applySettings(settings); // apply opacity/rotate/markers to the fresh scene
             }
           }
@@ -118,9 +184,12 @@
           if (nv.enabled && !board) { startPolling(); tryMount(); }
           else if (!nv.enabled && board) {
             stopPolling();
+            try { gameHud?.dispose(); } catch {}
+            try { window.__catan3d.billboard?.dispose(); } catch {}
             try { board.dispose(); } catch {}
-            board = null; forwarder = null;
+            board = null; forwarder = null; gameHud = null;
             window.__catan3d.board = null; window.__catan3d.forwarder = null;
+            window.__catan3d.gameHud = null; window.__catan3d.billboard = null;
           }
         });
       }).catch((e) => console.warn(TAG, "3D mount unavailable", e));
@@ -144,6 +213,7 @@
         board.scene.setBackgroundTransparent(s.transparentBg);
       }
       if (hud) hud.setVisible(s.showHud);
+      if (gameHud) gameHud.setVisible(s.showGameHud !== false);
       if (forwarder) forwarder.setMarkersEnabled(s.showMarkers);
     } catch (e) { console.warn(TAG, "applySettings failed", e); }
     // Fan out to any registered per-feature listeners (e.g. mount/unmount on `enabled`).
