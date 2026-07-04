@@ -412,4 +412,21 @@ translate; the TOP surface is NOT at `depth` — normalize geometry so top sits 
 Polish backlog (non-blocking): tile side shows faint extrude banding; verify wood/sheep/wheat
 color mapping side-by-side; optional AO/soft contact shadows under pieces.
 
-### ⏳ GATE 3 — Phase 3 (interactions) — not started
+### 🟩 GATE 3 — Phase 3 (interactions) — interaction layer PROVEN; autonomous win blocked
+The 3D interaction layer works end-to-end via **direct WebSocket send** (Colonist's WebGL input
+ignores synthetic clicks). Verified actions: settlement 15, road 11, city 19, robber 3,
+discard 2, end-turn 6, trade-response 50 — all confirmed against live state.
+
+**Gate-3 evidence run** (`harness/strategy-player.js`, clone 102):
+- A full-length bot game (**69 completed turns**) played entirely through our layer — setup
+  placement, rolls, robber moves, discards, trade-answers — driven by the legal-move engine +
+  direct-send.
+- The **desync watchdog reported 0 desyncs** across the whole game: our diff-reconstructed board
+  matched every authoritative Colonist snapshot. The interaction layer + state model are correct
+  for a complete game.
+
+**What's NOT reached:** an autonomous 10-VP victory. With only 2 starting settlements the player
+is resource-starved (built 0 pieces in 69 turns' main phase). Reaching a win needs **bank-trades**
+to convert surplus into build resources — the one unresolved action (see the bank-trade note).
+This is a game-competence gap, not an interaction-layer gap. A human can play a full game through
+the 3D board today.

@@ -199,6 +199,7 @@ while (Date.now() - T0 < MAX_MS) {
 rep.cityAction = CITY_ACTION; rep.devAction = DEV_ACTION;
 rep.finalVPs = await allVP();
 rep.finalPieces = await pieceCounts();
+try { rep.watchdog = await to(page.evaluate(() => window.__catan3d.desyncReport()), 8000, "wd"); } catch {}
 console.log("STRATEGY_RESULT " + JSON.stringify(rep));
 try { await page.screenshot({ path: path.join(SHOTS_DIR, "strategy-final.png") }); } catch {}
 try { await ctx.close(); } catch {}
