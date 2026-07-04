@@ -33,14 +33,16 @@ if (!loggedIn) { console.log("STRAT not logged in"); await ctx.close(); process.
 await dismissConsent(page);
 await startBotGame(page, {});
 await sleep(4500);
-for (let w = 0; w < 40 && !(await page.$("#game-canvas")); w++) await sleep(1000);
+for (let w = 0; w < 90 && !(await page.$("#game-canvas")); w++) { await sleep(1000); if (w === 45) { log("canvas still not up at 45s; re-clicking Start"); await page.evaluate(() => { const b = document.querySelector("#mm-details-play-button, #mm-mode-card-button"); if (b) b.click(); }).catch(() => {}); } }
 const canvas = await page.$("#game-canvas");
 if (!canvas) { console.log("STRAT no canvas"); await ctx.close(); process.exit(1); }
+log("in game; canvas up");
 const box = await canvas.boundingBox();
 const cx = box.x + box.width / 2, cy = box.y + box.height / 2, R = Math.min(box.width, box.height) * 0.42;
 
 // ---- state readers ----
-const core = () => page.evaluate(() => { const s = window.__catan3d.state; const ps = s.playerState(s.us) || {}; const vp = ps.victoryPointsState ? Object.values(ps.victoryPointsState).reduce((a, x) => a + (typeof x === "number" ? x : 0), 0) : 0; return { us: s.us, turn: s.currentTurnColor, completed: s.completedTurns, robber: s.robberTileIndex, hand: (ps.resourceCards && ps.resourceCards.cards) || {}, vp, ratios: ps.bankTradeRatiosState || {} }; });
+const core = () => page.evaluate(() => { const s = window.__catan3d.state; const ps = s.playerState(s.us) || {}; const vp = ps.victoryPointsState ? Object.values(ps.victoryPointsState).reduce((a, x) => a + (typeof x === "number" ? x : 0), 0) : 0; return { us: s.us, turn: s.currentTurnColor, completed: s.completedTurns, turnState: s.turnState, actionState: s.actionState, robber: s.robberTileIndex, hand: (ps.resourceCards && ps.resourceCards.cards) || {}, vp, ratios: ps.bankTradeRatiosState || {} }; });
+const endTurn = async () => { await page.evaluate(() => window.__catan3d.sendGameAction(6, true)); await sleep(1000); };
 const allVP = () => page.evaluate(() => { const s = window.__catan3d.snapshot(); return s.players.map((p) => `${p.color}:${p.vp}`).join(" "); });
 const prompt = () => page.evaluate(() => { const el = document.querySelector("[class*=messageContainer]"); return el ? (el.innerText || "").trim().toLowerCase() : ""; });
 const pieceCounts = () => page.evaluate(() => { const s = window.__catan3d.state, ms = s.gameState.mapState, us = s.us; return { settlements: Object.values(ms.tileCornerStates).filter((c) => c.owner === us && c.buildingType !== 2).length, cities: Object.values(ms.tileCornerStates).filter((c) => c.owner === us && c.buildingType === 2).length, roads: Object.values(ms.tileEdgeStates).filter((e) => e.owner === us).length }; });
@@ -126,15 +128,19 @@ async function discard() {
 
 const MAX_MS = 22 * 60 * 1000;
 let idle = 0;
+let iter = 0; let lastBeat = 0;
+try {
 while (Date.now() - T0 < MAX_MS) {
+  iter++;
   const c = await core(); const p = await prompt();
+  if (Date.now() - lastBeat > 8000) { lastBeat = Date.now(); log(`beat iter=${iter} completed=${c.completed} turn=${c.turn} us=${c.us} mine=${c.turn === c.us} vp=${c.vp} prompt="${p.slice(0, 28)}"`); }
   rep.maxVP = Math.max(rep.maxVP, c.vp);
   if (/you win|has won|game over|victory|you lose/i.test(p)) { rep.over = true; break; }
   const mine = c.turn === c.us;
 
   if (c.completed < 8) {
-    if (mine && /place settlement/.test(p)) { (await doSettlement(true)) ? rep.setupSettlements++ : rep.desyncs++; }
-    else if (mine && /place road/.test(p)) { (await doRoad(true)) ? rep.setupRoads++ : rep.desyncs++; }
+    if (mine && /place settlement/.test(p)) { const ok = await doSettlement(true); ok ? rep.setupSettlements++ : rep.desyncs++; log("setup settlement", ok ? "ok" : "FAIL"); }
+    else if (mine && /place road/.test(p)) { const ok = await doRoad(true); ok ? rep.setupRoads++ : rep.desyncs++; log("setup road", ok ? "ok" : "FAIL"); }
     else await sleep(800);
     continue;
   }
@@ -147,22 +153,33 @@ while (Date.now() - T0 < MAX_MS) {
   }
   idle = 0;
 
-  if (/roll/.test(p)) { await page.keyboard.press("Space"); rep.rolls++; await sleep(1500); continue; }
+  // Interrupt handlers first (can occur mid-turn).
   if (/move.*robber|place.*robber/.test(p)) { await moveRobber(); await sleep(500); continue; }
   if (/discard/.test(p)) { await discard(); continue; }
 
-  // BUILD PHASE — priority: city > settlement > devcard > road.
-  const hand = c.hand;
-  let acted = false;
-  if (canAfford(hand, COST.city)) { if (await doCity()) { rep.cities++; acted = true; log("built CITY, VP", (await core()).vp); } }
-  if (!acted && canAfford(hand, COST.settlement)) { if (await doSettlement(false)) { rep.settlements++; acted = true; log("built settlement"); } }
-  if (!acted && canAfford(hand, COST.dev)) { const cands = DEV_ACTION ? [DEV_ACTION] : DEV_CANDS; for (const cand of cands) { const bv = await page.evaluate(() => { try { const s = window.__catan3d.state, ps = s.playerState(s.us); const d = ps.developmentCards || {}; return Object.values(d).reduce((a, x) => a + (typeof x === "number" ? x : 0), 0); } catch { return 0; } }); await page.evaluate((cand) => window.__catan3d.sendGameAction(cand, true), cand); await sleep(900); const av = await page.evaluate(() => { try { const s = window.__catan3d.state, ps = s.playerState(s.us); const d = ps.developmentCards || {}; return Object.values(d).reduce((a, x) => a + (typeof x === "number" ? x : 0), 0); } catch { return 0; } }); if (av > bv) { if (!DEV_ACTION) { DEV_ACTION = cand; log("DISCOVERED dev action =", cand); } rep.devs++; acted = true; break; } } }
-  if (!acted && canAfford(hand, COST.road)) { if (await doRoad(false)) { rep.roads++; acted = true; } }
+  // Use turnState to gate precisely: ts1 = must roll; ts2 = build/trade/end-turn.
+  if (c.turnState === 1) { await page.keyboard.press("Space"); rep.rolls++; await sleep(1500); continue; }
+  if (c.turnState !== 2) { await sleep(700); continue; } // some other sub-state; wait
 
-  // end turn
-  await page.keyboard.press("Space"); await sleep(1000);
-  if (rep.rolls % 8 === 0) log("progress: VPs", await allVP(), "| built", JSON.stringify({ c: rep.cities, s: rep.settlements, d: rep.devs, r: rep.roads }));
+  // BUILD PHASE (ts2) — priority: city > settlement > devcard > road. Build as many as afford.
+  const hand = c.hand;
+  let builtSomething = false;
+  for (let step = 0; step < 4; step++) {
+    const h = (await core()).hand;
+    if (canAfford(h, COST.city) && await doCity()) { rep.cities++; builtSomething = true; log("built CITY, VP", (await core()).vp); continue; }
+    if (canAfford(h, COST.settlement) && await doSettlement(false)) { rep.settlements++; builtSomething = true; log("built settlement"); continue; }
+    if (canAfford(h, COST.dev)) { const cands = DEV_ACTION ? [DEV_ACTION] : DEV_CANDS; let d = false; for (const cand of cands) { const bv = await page.evaluate(() => { try { const s = window.__catan3d.state, ps = s.playerState(s.us); const dd = ps.developmentCards || {}; return Object.values(dd).reduce((a, x) => a + (typeof x === "number" ? x : 0), 0); } catch { return 0; } }); await page.evaluate((cand) => window.__catan3d.sendGameAction(cand, true), cand); await sleep(900); const av = await page.evaluate(() => { try { const s = window.__catan3d.state, ps = s.playerState(s.us); const dd = ps.developmentCards || {}; return Object.values(dd).reduce((a, x) => a + (typeof x === "number" ? x : 0), 0); } catch { return 0; } }); if (av > bv) { if (!DEV_ACTION) { DEV_ACTION = cand; log("DISCOVERED dev action =", cand); } rep.devs++; d = true; break; } } if (d) { builtSomething = true; continue; } }
+    if (canAfford(h, COST.road) && await doRoad(false)) { rep.roads++; builtSomething = true; continue; }
+    break; // nothing more affordable
+  }
+
+  // end turn via direct-send pass (action 6); verify it advanced, else fall back to Space.
+  const before = c.completed;
+  await endTurn();
+  if ((await core()).completed === before) { await page.keyboard.press("Space"); await sleep(1000); }
+  if (rep.rolls % 6 === 0) log("progress: VPs", await allVP(), "| built", JSON.stringify({ c: rep.cities, s: rep.settlements, d: rep.devs, r: rep.roads }));
 }
+} catch (e) { log("LOOP_ERROR", e && e.message || String(e)); }
 
 rep.cityAction = CITY_ACTION; rep.devAction = DEV_ACTION;
 rep.finalVPs = await allVP();

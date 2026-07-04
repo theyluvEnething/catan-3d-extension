@@ -166,6 +166,16 @@ Game-channel frame: `b0=3`, `channel = <serverId>` (e.g. "012634"), body =
 > VERIFIED end-to-end: full **initial placement** (both settlements + both roads) plays via
 > our direct-send + legal-move engine with **zero desync** (harness setuptest).
 
+### ✅ Phase (turnState/actionState) map — captured live
+| turnState | actionState | phase |
+|-----------|-------------|-------|
+| 0 | 1 | place settlement (setup) |
+| 0 | 3 | place road (setup) |
+| 1 | 0 | **roll dice** (main, pre-roll) |
+| 2 | 0 | **build/trade/end-turn** (main, post-roll — "your turn") |
+> Use turnState to gate main-phase actions precisely (prompt text is ambiguous).
+> End turn = direct-send **action 6** (pass) — Spacebar is unreliable for ending the turn.
+
 **Capture evidence:**
 - **discard = 2** ✅ (high): two isolated clone captures — `{action:2,payload:true}` appears
   only in the discard window and its count equals the cards discarded (run1 discarded 3 →
