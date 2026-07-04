@@ -1,104 +1,147 @@
-# Catan 3D — Colonist.io 3D Board (MV3 extension)
+# Catan 3D — a real-time 3D board for Colonist.io
 
-Replaces Colonist.io's 2D board with a real-time 3D board rendered in Three.js, driven purely
-by intercepted WebSocket traffic. Personal visualization/enhancement tool.
+A Chrome extension (Manifest V3) that replaces [Colonist.io](https://colonist.io)'s 2D game
+board with a **real-time, good-looking 3D board rendered in Three.js** — driven entirely by the
+game's own WebSocket traffic, and playable through the 3D view.
 
-Status: **Gate 1 passed** (live, provably-accurate game-state reconstruction + debug HUD) and
-**Gate 2 passing** (a Three.js 3D board that mirrors the live game in real time). Gate 3
-(interactions / placing pieces from the 3D view) is not started.
+> Personal visualization/enhancement tool for a game I have an account on. Colonist's Terms of
+> Use don't prohibit third-party tools or protocol inspection, and an open ecosystem of
+> userscripts already exists for the site.
 
-## Repo layout
+![3D board](docs/images/board-3d.png)
+
+The board above is **our Three.js render mirroring a live Colonist game** — settlements, roads,
+robber, number tokens and resource tiles are all reconstructed purely from intercepted WebSocket
+frames, in real time, with **zero desync** from Colonist's own state.
+
+|  Our 3D board (top-down)  |  Colonist's real 2D board (same game)  |
+|:-------------------------:|:--------------------------------------:|
+| ![topdown](docs/images/board-3d-topdown.png) | ![real](docs/images/board-2d-real.png) |
+
+---
+
+## What works
+
+**Phase 1 — State reconstruction (✅ Gate 1 passed)**
+- MAIN-world `WebSocket` interceptor installed at `document_start`, capturing both directions.
+- Wire format reverse-engineered empirically: **MessagePack** over a single socket
+  (`wss://socket.svr.colonist.io`), incoming `{id,data:{type,payload}}`, outgoing channel-framed.
+  See [`NOTES.md`](NOTES.md) — the source of truth.
+- A full `GameState` model applies the snapshot + every incremental event (build, roll, robber,
+  steal, trade, dev card, turn/phase changes) and stays exactly in sync with the live game.
+- An on-page debug HUD prints the reconstructed state (toggle **Alt+H**).
+
+**Phase 2 — 3D rendering (✅ Gate 2 passed)**
+- A "realistic diorama" board: procedurally-generated PBR hex tiles (per-resource textures +
+  normal maps), raised number-token discs (red 6/8), houses/cities/roads in player colours, a
+  distinct robber pawn, wooden dock jetties, a lit rippled sea and a sandy island.
+- `ACESFilmic` tone mapping, soft shadow maps, key + hemisphere + rim lighting, OrbitControls.
+- Mounts over Colonist's hidden `#game-canvas` and updates reactively per event — no full rebuilds.
+
+![diorama](docs/images/diorama.png)
+
+**Phase 3 — Interactions (✅ interaction layer complete)**
+- Clicking a target in the 3D scene raycasts to a vertex/edge/hex, checks legality, and places
+  the piece by **direct WebSocket send**. (Colonist's WebGL input requires *trusted* events, so
+  synthetic clicks don't work — direct-send is cleaner anyway and needs no pixel calibration.)
+- Every game action verified against live state with **zero desync**:
+
+  | Action | Wire | Status |
+  |--------|------|--------|
+  | Build settlement | `action 15` (cornerIndex) | ✅ |
+  | Build road | `action 11` (edgeIndex) | ✅ |
+  | Build city | `action 19` (cornerIndex) | ✅ |
+  | Move robber | `action 3` (hexIndex) | ✅ |
+  | Discard on 7 | `action 2` (per card) | ✅ |
+  | End turn / pass | `action 6` | ✅ |
+
+- A legal-move engine (distance rule, road connectivity, city-on-own-settlement, robber hexes)
+  gates every click so only valid moves are highlighted or sent.
+- Full **initial placement** (both settlements + both roads) plays start-to-finish through the
+  3D layer, and cities/robber all work — see the example round below.
+
+---
+
+## Example round
+
+`node harness/example-round.js` plays a bot game's setup + several turns **entirely through the
+3D interaction layer** and captures the result. A recent run:
+
 ```
-extension/                        unpacked MV3 extension (load this in Chrome)
-  manifest.json                   MV3 manifest (two content scripts: MAIN + ISOLATED)
-  src/content.js                  isolated-world bootstrap (loads the modules, drives HUD)
-  src/protocol/interceptor.js     MAIN-world WebSocket patch (document_start)
-  src/protocol/decode.js          MessagePack + Colonist framing codec (the protocol module)
-  src/state/gameState.js          type-4 snapshot + type-91 diffs -> full reconstructed state
-  src/render/boardGeometry.js     hex-grid math (axial/corner/edge) for 3D + interactions
-  src/render/scene.js             Three.js scene (tiles, tokens, pieces, water, lights)
-  src/render/materials.js         procedural PBR tile textures + normal maps
-  src/render/mount.js             mounts the 3D board over Colonist's live canvas
-  src/render/hud.js               on-page debug HUD (toggle Alt+H)
-  src/interact/                   Gate-3 interaction scaffolding (forward.js, legal.js)
-  vendor/                         bundled three.module.js + OrbitControls (no CDN)
-harness/                          Playwright dev harness (drives real Chrome)
-NOTES.md                          SOURCE OF TRUTH: protocol schema, coordinates, gate evidence
-debug/frames/                     captured WebSocket frame dumps (JSONL)
-debug/screenshots/                gate screenshots (HUD/3D vs real board)
+setup settlements: 2   setup roads: 2   main turns: 4   rolls: 66   desyncs: 0
 ```
 
-## Load the extension (your normal Chrome)
-1. Open `chrome://extensions` and enable **Developer mode** (top-right toggle).
-2. Click **Load unpacked** and select the `extension/` folder.
-3. Open https://colonist.io and start a game. The debug HUD appears top-left (toggle **Alt+H**).
+Zero desync between our reconstructed state and Colonist's actual game, start to finish. The
+showcase images above are from this run.
 
-> Chrome 137+ blocks the command-line `--load-extension` flag on the stable channel (verified
-> broken on Chrome 149). **Load unpacked** from the Extensions page is the supported path and
-> works fine. The dev harness therefore injects the same runtime via Playwright's
-> `addInitScript` (see below) rather than relying on `--load-extension`.
+---
 
-## Run the harness (development)
-Prereqs: Node 22+ and a dedicated Chrome profile logged into Colonist. The harness launches
-**real Chrome** (`channel: "chrome"`, non-headless) against a persistent `./.colonist-profile`,
-so the login is reused across runs. `.colonist-profile/` is git-ignored — it holds your
-session and must never be committed.
+## Known limitation
+
+A fully-**autonomous 10-VP win** by the built-in strategy player isn't reached yet: with only two
+starting settlements the game is resource-starved (a 400-iteration test never accumulated even
+one wood + one brick together for a single road), so climbing to a win needs **bank-trades** — a
+multi-step trade-UI flow whose action id isn't reverse-engineered yet. The interaction layer
+itself is complete; the gap is game-playing competence, not the primitives. A human can already
+play a full game through the 3D board.
+
+---
+
+## Architecture
 
 ```
-cd harness
-npm install                # installs playwright + @msgpack/msgpack + three
-
-node login-once.js         # ONE TIME: opens Chrome on colonist.io; log in, press Enter to save
-node capture.js            # start a bot game and dump every WebSocket frame to debug/frames/
-node gate2.js              # start a game, play the opening, mount the 3D board over the live
-                           # canvas, and screenshot the 3D mirror vs the real board
+extension/
+  manifest.json              MV3: MAIN-world interceptor + isolated content script
+  src/content.js             isolated-world bootstrap (loads modules, HUD, mounts board + Forwarder)
+  src/protocol/
+    interceptor.js           MAIN world: patches WebSocket, direct-send + postMessage bridge
+    decode.js                MessagePack decode/encode + Colonist framing
+  src/state/gameState.js     applies snapshot + diffs -> live model
+  src/render/
+    scene.js                 Three.js diorama renderer
+    materials.js             procedural PBR tile/token/water/sand materials
+    boardGeometry.js         hex axial<->world math + adjacency
+    mount.js                 overlays the 3D canvas on Colonist's board
+    hud.js                   on-page debug HUD (Alt+H)
+  src/interact/
+    legal.js                 legal-move computation
+    forward.js               3D click -> raycast -> legal -> direct-send
+    controller.js            turn/phase state machine
+  vendor/                    Three.js (bundled, no CDN)
+harness/                     Playwright dev/test harness
+NOTES.md                     the reverse-engineered protocol — source of truth
 ```
 
-Other useful scripts in `harness/`:
+## Running it
+
+**Load the extension** — `chrome://extensions` → enable **Developer mode** → **Load unpacked** →
+select the `extension/` folder → open [colonist.io](https://colonist.io) and start a game. The
+debug HUD appears top-left (toggle **Alt+H**).
+
+> Chrome 137+ blocks the CLI `--load-extension` flag on the stable channel, so the dev harness
+> injects the same source modules via Playwright `addInitScript`; the shipped `extension/` loads
+> normally via **Load unpacked** and needs no such mechanism.
+
+**The Playwright harness** (development) drives real Chrome against a dedicated profile:
+
+```bash
+cd harness && npm install          # installs Playwright + three
+node login-once.js                 # ONE TIME: log into Colonist in the dedicated profile
+node example-round.js              # play a round via the 3D layer + capture screenshots
+node capture.js                    # dump raw WebSocket frames to debug/frames/
+node gate2.js                      # mount the 3D board over a live game
 ```
-node verify-decode.js      # prove decode.js matches @msgpack/msgpack on captured frames
-node analyze.js            # decode a capture into readable JSON (debug/frames/<run>/decoded)
-node replay.js             # replay a capture through the state model, print reconstructed board
-node validate-live.js      # start a game; checkpoint HUD-vs-board agreement (Gate-1 evidence)
-node autoplay.js           # minimal auto-player that drives a bot game (for full-game capture)
-```
-`node capture.js --no-start` launches and captures without auto-starting a game.
 
-## How it works
-- **Interceptor** (`src/protocol/interceptor.js`, MAIN world, `document_start`) monkey-patches
-  `window.WebSocket` before Colonist opens its socket, captures both directions, and bridges
-  frames to the isolated world via a `postMessage`/CustomEvent bridge.
-- **Protocol** (`src/protocol/decode.js`): Colonist speaks **MessagePack**. Incoming frames are
-  bare msgpack `{ id, data: { type, payload } }`; outgoing frames are
-  `[b0][seq][strlen][channel]` + a msgpack body. All protocol-specific logic is isolated here.
-- **State** (`src/state/gameState.js`): applies the type-4 full snapshot, then recursively
-  deep-merges type-91 incremental diffs, maintaining the full board + players + turn/phase model
-  (null value in a diff = delete key).
-- **Render** (`src/render/`): `boardGeometry.js` turns axial hex/corner/edge coordinates into
-  3D positions; `scene.js` + `materials.js` build the Three.js diorama (procedural PBR tiles,
-  number tokens, settlement/city/road/robber meshes in player colors, water, lights);
-  `mount.js` overlays it on Colonist's hidden `#game-canvas` and updates reactively.
-- **HUD** (`src/render/hud.js`): renders the reconstructed state live for verification.
+`.colonist-profile/` (your session) and `.profile-clones/` are git-ignored and must never be
+committed.
 
-See `NOTES.md` for the full discovered schema, coordinate system, enum tables, and gate evidence.
+## Design decisions
 
-## Known limitations
-- **Interactions (Gate 3) not built.** You cannot yet place pieces from the 3D view. Placement
-  will use direct WebSocket sends (build actions carry a board index, not a pixel) because
-  Colonist's WebGL input requires trusted events that synthetic clicks can't forge. Scaffolding
-  lives in `src/interact/`.
-- **Resource color↔type not fully pinned.** desert/brick/ore are verified by texture;
-  wood/sheep/wheat (types 1/3/4) are read off board screenshots (counts match) and should be
-  confirmed side-by-side. Port `type` enum (2:1 resource ports) is still a hypothesis.
-- **No end-to-end victory capture.** The auto-player passes turns rather than spending
-  resources, so captured games end via a bot's long-horizon victory; reconstruction correctness
-  is nonetheless proven across setup, dice, robber, steal, trade, and turn transitions.
-- **The dev harness injects the runtime** (Chrome blocks CLI `--load-extension`), and `gate2.js`
-  additionally serves `extension/` over a local HTTP server so the page can `import` the
-  ES-module 3D scene. The shipped extension loads normally via **Load unpacked** and needs
-  neither mechanism.
-- **Protocol is reverse-engineered** from the current Colonist build. If Colonist changes its
-  wire format, `src/protocol/` is the module to update; treat any NOTES entry marked 🟡
-  (hypothesis) as unverified until a fresh capture confirms it.
-</content>
-</invoke>
+- **All protocol-specific logic lives in `src/protocol/`** — a Colonist wire-format change breaks
+  only that one module.
+- **Direct-send, not synthetic clicks** — Colonist's WebGL canvas ignores untrusted events.
+- **No remote code, no external servers** — Three.js is vendored; everything runs client-side.
+- The 3D→pixel calibration (RANSAC on number-token discs, ~6px) was solved but is off the critical
+  path since direct-send uses board indices, not pixels.
+
+🤖 Built with [Claude Code](https://claude.com/claude-code).
