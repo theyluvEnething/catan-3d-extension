@@ -1,5 +1,7 @@
 # Dedicated Chrome profile (contains your Colonist login — never commit)
 .colonist-profile/
+# Cloned profiles for parallel games (contain login + are huge)
+.profile-clones/
 
 # Node
 node_modules/
