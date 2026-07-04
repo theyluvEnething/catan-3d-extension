@@ -43,7 +43,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/*", "vendor/*", "icons/*"],
+      "resources": ["src/*", "vendor/*", "icons/*", "assets/*"],
       "matches": ["https://colonist.io/*", "https://www.colonist.io/*"]
     }
   ]

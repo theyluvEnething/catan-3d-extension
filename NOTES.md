@@ -297,8 +297,25 @@ gameLogState.<n+1> = { text:{type:44} }                          // 44 = end-of-
   [counter ✏️][decline ✕][accept ✓].
 - `gameLogState text.type`: 4 = placed piece, 44 = end-turn, 43 = trade executed.
 
-> STILL TODO: resource-gain-on-roll exact shape, dev-card buy/play, city upgrade,
-> game-end/victory payload. (Auto-player passes turns, so games end via bot victory.)
+### type-91 diff + gameLog vocabulary — ✅ VERIFIED (half-game human capture, debug/hud/, 2026-07-04)
+**Dev cards** — `mechanicDevelopmentCardsState`:
+```
+bankDevelopmentCards.cards = [array of ids]   # bank deck; 25 at start; id 10 = HIDDEN back
+players.<color>.developmentCards.cards        # that player's HAND (real ids for us, 10=hidden for others)
+players.<color>.developmentCardsBoughtThisTurn = [ids]  # set on buy, nulled at turn end (can't play same turn)
+players.<color>.developmentCardsUsed = [ids]  # PUBLIC play history (append-only)
+players.<color>.hasUsedDevelopmentCardThisTurn = true
+```
+Buy: hand gains id + boughtThisTurn gains id + bank array shrinks by 1. Play: hand loses id, used gains id.
+**Dev-card type enum (partial, verified):** 10 = hidden/back. 15 = played then took 2 res (Year-of-Plenty-like) → **15 ≈ YearOfPlenty**; 12 = second real type (unplayed, TBD). Full 5-id map still to pin (Knight/VP/RoadBuilding/YoP/Monopoly).
+**gameLog `text.type` (VERIFIED):** 1 = turn/join marker; 4 = placed piece `{pieceEnum}` (2=settlement,0=road,1=city); 5 = **bought dev** `{pieceEnum,isVp}`; 10 = **dice** `{firstDice,secondDice}`; 11 = robber/steal tile `{pieceEnum:5,tileInfo}`; 16 = **steal** `{playerColorThief,playerColorVictim,cardBacks}`; 20 = **dev PLAYED** `{playerColor,cardEnum}`; 21 = **Year-of-Plenty take** `{cardEnums:[a,b]}`; 44 = end-turn; 47 = **resource distribution on roll** `{playerColor,cardsToBroadcast:[resIds],distributionType}`; 49 = robber-blocked/no-production `{tileInfo}`; 115 = **trade completed** `{playerColor,acceptingPlayerColor,givenCardEnums,receivedCardEnums}`; 118 = **trade offer** `{wantedCardEnums,offeredCardEnums}`.
+**Per-player state (playerStates.<color>):** `victoryPointsState` (obj keyed by VP-source, sum=VP), `bankTradeRatiosState` {resId:ratio} (port ratios!), `resourceCards.cards`=[resIds] (hand; empty/ hidden for others), `cardDiscardLimit`, `isConnected`, `isTakingAction`.
+**Pieces left:** `mechanicSettlementState.<c>.bankSettlementAmount` (5), `mechanicCityState.<c>.bankCityAmount` (4), `mechanicRoadState.<c>.bankRoadAmount` (15).
+**Bank:** `bankState.resourceCards` = {1:19,2:19,3:19,4:19,5:19} (by resId). **Awards:** `mechanicLargestArmyState.<c>` / `mechanicLongestRoadState.<c>.longestRoad`.
+**Names/bots NOT in gameState** — they're in the snapshot payload siblings `playerUserStates` + `playOrder` + `playerColor` (GameState already stores these as .playerUserStates/.playOrder/.us).
+**DOM layout (VERIFIED):** `#game-canvas` and `#ui-game.ui-game-container` occupy the SAME rect (x:165,y:0,w:1590,h:953 @1920×953) — Colonist's player panels + card tray + top-left icons live in `#ui-game` OVER the canvas. Our overlay (pinned to the canvas rect) covers BOTH → the HUD panels/tray MUST be rebuilt in the overlay to stay functional.
+
+> STILL TODO: exact 5-id dev enum (have 10=hidden,15≈YoP,12=?), city-upgrade diff, game-end/victory payload.
 
 ### `gameState` structure — ✅ VERIFIED (from a live type-4 snapshot)
 ```
