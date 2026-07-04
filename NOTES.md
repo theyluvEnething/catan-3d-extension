@@ -155,10 +155,24 @@ Game-channel frame: `b0=3`, `channel = <serverId>` (e.g. "012634"), body =
 | **11** | **build road** | **edgeIndex** (index into tileEdgeStates) |
 | **19** | **build city** (upgrade settlement) | **cornerIndex** ✅ (found via wide direct-send enum; buildingType→2). UI button `#action-button-build-city`. |
 | **2** | **discard card (on a 7)** | **`true`** — one frame per card; count = #cards discarded ✅ |
-| 🟡 6 | **end turn / pass** (confidence: med) | `true` — fires on every Spacebar-pass in main phase |
-| 🟡 3 | **move robber** (confidence: med) | hexIndex — captured when the robber moved (play-and-capture clone 42) |
+| **6** | **end turn / pass** | `true` — fires on every pass in main phase ✅ |
+| **3** | **move robber** | hexIndex ✅ (verified: robber tile changes; `robber3ok`) |
+| **47** | **add card to trade-creator** | `true` — one per card added to the offer/want builder (see trade note) |
 | 🟡 67 | subscribe/keepalive (channel string payload) | serverId — NOT a gameplay action |
-| ❓ city | city upgrade — still unisolated | (candidates 47/6 both overlap other actions) |
+
+### 🟡 Bank/maritime trade — mechanism mapped, execute-frame not isolated
+The trade UI: `#action-button-trade` opens a trade-creator (`tradeCreatorContainer` with
+offered/wanted halves), `#action-button-trade-bank` / `#action-button-trade-players` execute a
+bank or player trade. Adding a card to the builder sends **`{action:47, payload:true}`** (the
+resource is implied by *which* card button is clicked; payload carries no resource id).
+Incoming trade data arrives as **type 43** with fields
+`{givingPlayer, givingCards, receivingPlayer, receivingCards}`.
+The bank-execute frame was NOT cleanly isolated: the trade-creator is a React panel that
+re-renders and repositions its card buttons after every click, so scripted `page.mouse.click`
+choreography only reliably lands the first add (one action-47 per attempt), never a valid 4:1.
+**Automating bank-trade needs either** (a) driving the create-trade action directly with the
+type-43 card-array payload shape, or (b) a more robust UI driver keyed on stable card-button
+selectors. Left as a documented TODO — it is the one blocker to a fully-autonomous 10-VP win.
 
 > Payload is the **board index**, NOT a pixel — direct-send needs no calibration.
 > `action 2` (discard) uses payload `true`, NOT an index — it is a per-card confirm toggle.
