@@ -55,6 +55,11 @@ export class Forwarder {
     this._buildPickTargets();
     this._hoverMesh = null;
     this._attach();
+    // Show legal-target markers reactively as the game state changes (our turn / phase shifts).
+    if (state && typeof state.subscribe === "function") {
+      this._unsub = state.subscribe(() => { try { this.refreshLegalMarkers(); } catch {} });
+    }
+    try { this.refreshLegalMarkers(); } catch {}
   }
 
   setAffine(aff) { this.affine = aff; }
@@ -186,13 +191,37 @@ export class Forwarder {
     if (this._hoverMarker) { this.scene.board.remove(this._hoverMarker); this._hoverMarker = null; }
     if (!target) { this.scene.renderer.domElement.style.cursor = ""; return; }
     this.scene.renderer.domElement.style.cursor = "pointer";
-    // a glowing ring/marker at the target
+    // a bright glowing ring at the hovered target
     const isHex = target.userData.kind === "hex";
-    const geo = isHex ? new THREE.RingGeometry(0.35, 0.5, 24) : new THREE.RingGeometry(0.12, 0.2, 20);
-    const mk = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x7fe0ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
+    const geo = isHex ? new THREE.RingGeometry(0.34, 0.52, 28) : new THREE.RingGeometry(0.1, 0.22, 24);
+    const mk = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x9ff0ff, transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthTest: false }));
+    mk.renderOrder = 999;
     mk.rotation.x = -Math.PI / 2;
-    mk.position.set(target.userData.u, 0.5, target.userData.v);
+    mk.position.set(target.userData.u, 0.62, target.userData.v);
     this._hoverMarker = mk; this.scene.board.add(mk);
+  }
+
+  /**
+   * Show faint persistent markers on ALL legal targets for the current context, so the player
+   * can see where they may build/move. Call reactively on state change. Cheap (reuses geometry).
+   */
+  refreshLegalMarkers() {
+    if (this._legalGroup) { this.scene.board.remove(this._legalGroup); this._legalGroup = null; }
+    const ctx = this._context();
+    if (!ctx) return; // not our turn / nothing to do
+    const pickables = this._pickablesForContext();
+    if (!pickables.length) return;
+    const grp = new THREE.Group(); grp.name = "legal-markers";
+    const isHex = ctx === "robber";
+    const geo = isHex ? new THREE.RingGeometry(0.3, 0.44, 24) : new THREE.RingGeometry(0.09, 0.17, 20);
+    const mat = new THREE.MeshBasicMaterial({ color: ctx === "robber" ? 0xffcf6b : 0x86f0a6, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false });
+    for (const m of pickables) {
+      const mk = new THREE.Mesh(geo, mat);
+      mk.renderOrder = 998; mk.rotation.x = -Math.PI / 2;
+      mk.position.set(m.userData.u, 0.55, m.userData.v);
+      grp.add(mk);
+    }
+    this._legalGroup = grp; this.scene.board.add(grp);
   }
 
   _onClick(ev) {
@@ -244,7 +273,9 @@ export class Forwarder {
   }
 
   dispose() {
+    if (this._unsub) { try { this._unsub(); } catch {} }
     if (this.pickGroup) this.scene.board.remove(this.pickGroup);
     if (this._hoverMarker) this.scene.board.remove(this._hoverMarker);
+    if (this._legalGroup) this.scene.board.remove(this._legalGroup);
   }
 }

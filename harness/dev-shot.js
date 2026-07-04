@@ -24,7 +24,8 @@ const server = http.createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, r));
 const port = server.address().port;
-const page_url = `http://localhost:${port}/harness/dev/index.html`;
+const devPage = process.argv[3] || "index.html";
+const page_url = `http://localhost:${port}/harness/dev/${devPage}`;
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 820 }, deviceScaleFactor: 2 });
