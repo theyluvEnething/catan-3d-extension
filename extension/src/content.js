@@ -25,13 +25,17 @@
 
   async function boot() {
     try {
-      const [{ decodeFrame: df }, { GameState }, { DebugHUD }] = await Promise.all([
+      const [{ decodeFrame: df }, { GameState }, { DebugHUD }, { attachWatchdog }] = await Promise.all([
         import(chrome.runtime.getURL("src/protocol/decode.js")),
         import(chrome.runtime.getURL("src/state/gameState.js")),
         import(chrome.runtime.getURL("src/render/hud.js")),
+        import(chrome.runtime.getURL("src/state/watchdog.js")),
       ]);
       decodeFrame = df;
       gameState = new GameState();
+      // Desync watchdog — compares our reconstruction to each fresh authoritative snapshot.
+      const watchdog = attachWatchdog(gameState, { onDesync: (drifts) => { window.__catan3d.lastDesync = drifts; } });
+      window.__catan3d.desyncReport = () => watchdog.report();
       const mountHud = () => { hud = new DebugHUD(); gameState.subscribe(() => hud.render(gameState)); };
       if (document.body) mountHud();
       else window.addEventListener("DOMContentLoaded", mountHud, { once: true });

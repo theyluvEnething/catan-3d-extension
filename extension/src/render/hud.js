@@ -55,7 +55,13 @@ export class DebugHUD {
     const row = (label, val) => `<div><span style="color:#8aa0bd">${label}:</span> ${val}</div>`;
     const chip = (c) => `<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${colorHex(c)};margin-right:3px;vertical-align:middle"></span>`;
 
+    // desync watchdog status (green = in sync with Colonist's authoritative snapshots)
+    let wd = null; try { wd = window.__catan3d && window.__catan3d.desyncReport && window.__catan3d.desyncReport(); } catch {}
     let html = "";
+    if (wd && wd.checks > 0) {
+      const ok = wd.clean;
+      html += `<div style="margin-bottom:4px"><span style="color:${ok ? "#4a9a44" : "#d0553b"}">● </span><span style="color:#8aa0bd">sync:</span> ${ok ? `in sync (${wd.checks} checks)` : `<b style="color:#d0553b">DESYNC ×${wd.desyncs}</b>`}</div>`;
+    }
     html += row("us", `${chip(gs.us)}color ${gs.us}`);
     html += row("turn", `${chip(turn)}color ${turn} ${turn === gs.us ? "<b style='color:#7fd1ff'>(you)</b>" : ""}`);
     html += row("phase", `turnState=${gs.turnState} actionState=${gs.actionState} completedTurns=${gs.completedTurns}`);

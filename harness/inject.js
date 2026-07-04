@@ -35,6 +35,7 @@ export function buildInitScript() {
   // Pure geometry + legal-move logic (no three.js) — strip their cross-imports too.
   const boardGeom = deExport(read("render/boardGeometry.js"));
   const legal = deExport(read("interact/legal.js")).replace(/^import\s+.*$/gm, "");
+  const watchdog = deExport(read("state/watchdog.js")).replace(/^import\s+.*$/gm, "");
 
   // Assemble a single IIFE. Order matters: decode -> gameState -> hud -> glue.
   return `
@@ -56,12 +57,17 @@ export function buildInitScript() {
   // ---- legal.js (pure) ----
   ${legal}
 
+  // ---- watchdog.js (pure) ----
+  ${watchdog}
+
   // ---- hud.js ----
   ${hud}
 
   // ---- runtime glue ----
   const state = new GameState();
   let hud = null;
+  // Desync watchdog: compares our diff-reconstructed board to each fresh authoritative snapshot.
+  const watchdog = attachWatchdog(state);
   function mountHud(){ try { hud = new DebugHUD(); state.subscribe(()=>hud.render(state)); } catch(e){ console.warn("hud", e);} }
   if (document.body) mountHud(); else window.addEventListener("DOMContentLoaded", mountHud, {once:true});
 
@@ -127,7 +133,8 @@ export function buildInitScript() {
     } catch (e) { return { ok:false, error: String(e && e.message || e) }; }
   }
 
-  window.__catan3d = { __installed:true, state, decodeFrame, rawLog, sendGameAction,
+  window.__catan3d = { __installed:true, state, decodeFrame, rawLog, sendGameAction, watchdog,
+    desyncReport: () => watchdog.report(),
     wire: () => ({ channel: wire.channel, sequence: wire.sequence, open: wire.socket && wire.socket.readyState === 1 }),
     buildSettlement: (cornerIndex) => sendGameAction(15, cornerIndex),
     buildRoad: (edgeIndex) => sendGameAction(11, edgeIndex),
