@@ -96,6 +96,73 @@
     return;
   }
 
+  // --- DIRECT-SEND wiring (MAIN world owns the real socket) --------------------------------
+  // The isolated content script (Forwarder) can't touch the page socket, so it posts a
+  // CATAN3D_SEND request and we emit the real build message here. We sniff outgoing game
+  // frames just enough to learn the channel (serverId) + latest sequence, without a full
+  // decoder: game frame = [0x03][0x01][strlen][channel bytes][msgpack {action,payload,sequence}].
+  const wire = { socket: null, channel: null, sequence: 0 };
+
+  function sniffOutgoing(u8, socket) {
+    try {
+      if (!u8 || u8.length < 4 || u8[0] !== 0x03) return;
+      const strlen = u8[2];
+      let channel = "";
+      for (let i = 0; i < strlen; i++) channel += String.fromCharCode(u8[3 + i]);
+      wire.channel = channel; wire.socket = socket;
+      // find "sequence" fixstr key then its uint value in the msgpack tail (best-effort).
+      const tail = u8.subarray(3 + strlen);
+      // scan for the 8-byte "sequence" fixstr (0xa8 + 'sequence')
+      for (let i = 0; i + 9 < tail.length; i++) {
+        if (tail[i] === 0xa8 && tail[i + 1] === 0x73 && tail[i + 2] === 0x65 && tail[i + 3] === 0x71) {
+          const vb = tail[i + 9]; // value byte after the 8-char key
+          if (vb < 0x80) { wire.sequence = vb; }
+          else if (vb === 0xcc) wire.sequence = tail[i + 10];
+          else if (vb === 0xcd) wire.sequence = (tail[i + 10] << 8) | tail[i + 11];
+          break;
+        }
+      }
+    } catch {}
+  }
+
+  // Minimal msgpack encoder for {action, payload, sequence} where values are small ints / null
+  // / true / false. Sufficient for build/roll/robber/etc. actions.
+  function mpEncodeBuildBody(action, payload, sequence) {
+    const bytes = [];
+    const pushInt = (n) => {
+      if (n >= 0 && n < 0x80) bytes.push(n);
+      else if (n >= 0 && n <= 0xff) bytes.push(0xcc, n);
+      else if (n >= 0 && n <= 0xffff) bytes.push(0xcd, (n >> 8) & 0xff, n & 0xff);
+      else bytes.push(0xce, (n >>> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff);
+    };
+    const pushStr = (s) => { bytes.push(0xa0 | s.length); for (let i = 0; i < s.length; i++) bytes.push(s.charCodeAt(i)); };
+    const pushVal = (v) => {
+      if (v === null || v === undefined) bytes.push(0xc0);
+      else if (v === true) bytes.push(0xc3);
+      else if (v === false) bytes.push(0xc2);
+      else if (typeof v === "number") pushInt(v);
+      else pushStr(String(v));
+    };
+    bytes.push(0x83); // fixmap of 3
+    pushStr("action"); pushVal(action);
+    pushStr("payload"); pushVal(payload);
+    pushStr("sequence"); pushVal(sequence);
+    return Uint8Array.from(bytes);
+  }
+
+  function sendGameAction(action, payload) {
+    if (!wire.socket || !wire.channel) return { ok: false, error: "no game socket/channel" };
+    if (wire.socket.readyState !== 1) return { ok: false, error: "socket not open" };
+    const sequence = (wire.sequence || 0) + 1;
+    const chan = Uint8Array.from(wire.channel, (c) => c.charCodeAt(0));
+    const body = mpEncodeBuildBody(action, payload, sequence);
+    const out = new Uint8Array(3 + chan.length + body.length);
+    out[0] = 0x03; out[1] = 0x01; out[2] = chan.length;
+    out.set(chan, 3); out.set(body, 3 + chan.length);
+    try { wire._nativeSend.call(wire.socket, out); wire.sequence = sequence; return { ok: true, action, payload, sequence }; }
+    catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+  }
+
   function PatchedWebSocket(...args) {
     const socket = new NativeWebSocket(...args);
     try {
@@ -111,6 +178,12 @@
     const nativeSend = socket.send;
     socket.send = function (data) {
       normalizeAndPost("out", data);
+      try {
+        let u8 = null;
+        if (data instanceof ArrayBuffer) u8 = new Uint8Array(data);
+        else if (ArrayBuffer.isView(data)) u8 = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        if (u8) { sniffOutgoing(u8, socket); wire._nativeSend = nativeSend; }
+      } catch {}
       return nativeSend.apply(this, arguments);
     };
     return socket;
@@ -134,8 +207,20 @@
   // We DON'T call it here; we just try to surface a decode() we can invoke on demand.
   // ------------------------------------------------------------------
   window.__CATAN3D__ = window.__CATAN3D__ || {};
+  // Also expose direct-send in the MAIN world for debugging / the harness.
+  window.__CATAN3D__.sendGameAction = sendGameAction;
+  window.__CATAN3D__.buildSettlement = (i) => sendGameAction(15, i);
+  window.__CATAN3D__.buildRoad = (i) => sendGameAction(11, i);
+  window.__CATAN3D__.wire = () => ({ channel: wire.channel, sequence: wire.sequence, open: wire.socket && wire.socket.readyState === 1 });
+
+  // Bridge: isolated content script posts { source:'CATAN3D_SEND', action, payload, reqId };
+  // we perform the real send and post back { source:'CATAN3D_SEND_RESULT', reqId, result }.
   window.addEventListener("message", (ev) => {
-    if (ev.source !== window || !ev.data || ev.data.source !== "CATAN3D_REQ") return;
-    // reserved for future request/response (e.g. "decode this via native module")
+    if (ev.source !== window || !ev.data) return;
+    const d = ev.data;
+    if (d.source === "CATAN3D_SEND") {
+      const result = sendGameAction(d.action, d.payload);
+      window.postMessage({ source: "CATAN3D_SEND_RESULT", reqId: d.reqId, result }, window.location.origin);
+    }
   });
 })();

@@ -1,0 +1,81 @@
+{
+  "actions": [
+    {
+      "action": 15,
+      "payload": 31,
+      "prompt": "place settlement"
+    },
+    {
+      "action": 67,
+      "payload": "047C34",
+      "prompt": "place road"
+    },
+    {
+      "action": 68,
+      "payload": null,
+      "prompt": "place road"
+    },
+    {
+      "action": 67,
+      "payload": "047C34",
+      "prompt": "place road"
+    },
+    {
+      "action": 68,
+      "payload": null,
+      "prompt": "place road"
+    },
+    {
+      "action": 67,
+      "payload": "047C34",
+      "prompt": "place road"
+    },
+    {
+      "action": 67,
+      "payload": "047C34",
+      "prompt": "place road"
+    },
+    {
+      "action": 67,
+      "payload": "047C34",
+      "prompt": "place road"
+    },
+    {
+      "action": 68,
+      "payload": null,
+      "prompt": "place road"
+    }
+  ],
+  "summary": [
+    {
+      "action": 15,
+      "count": 1,
+      "payloads": [
+        31
+      ],
+      "prompts": [
+        "place settlement"
+      ]
+    },
+    {
+      "action": 67,
+      "count": 5,
+      "payloads": [
+        "047C34"
+      ],
+      "prompts": [
+        "place road"
+      ]
+    },
+    {
+      "action": 68,
+      "count": 3,
+      "payloads": [
+        "null"
+      ],
+      "prompts": [
+        "place road"
+      ]
+    }
+  ]
+}

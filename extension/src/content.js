@@ -40,14 +40,39 @@
       window.__catan3d.state = gameState;
       window.__catan3d.decodeFrame = decodeFrame;
 
-      // Mount the 3D board once the game canvas exists (poll until it appears).
-      import(chrome.runtime.getURL("src/render/mount.js")).then(({ mountBoard }) => {
+      // Direct-send bridge to the MAIN world (interceptor owns the real socket). The Forwarder
+      // calls this to place pieces; we round-trip a CATAN3D_SEND request/response by reqId.
+      const pendingSends = new Map();
+      let reqSeq = 0;
+      window.addEventListener("message", (ev) => {
+        if (ev.source !== window || !ev.data || ev.data.source !== "CATAN3D_SEND_RESULT") return;
+        const cb = pendingSends.get(ev.data.reqId); if (cb) { pendingSends.delete(ev.data.reqId); cb(ev.data.result); }
+      });
+      const sendApi = {
+        sendGameAction: (action, payload) => { const reqId = ++reqSeq; return new Promise((res) => { pendingSends.set(reqId, res); window.postMessage({ source: "CATAN3D_SEND", action, payload, reqId }, location.origin); setTimeout(() => { if (pendingSends.has(reqId)) { pendingSends.delete(reqId); res({ ok: false, error: "timeout" }); } }, 1500); }); },
+        buildSettlement: (i) => sendApi.sendGameAction(15, i),
+        buildRoad: (i) => sendApi.sendGameAction(11, i),
+      };
+      window.__catan3d.send = sendApi;
+
+      // Mount the 3D board + interaction layer once the game canvas exists.
+      Promise.all([
+        import(chrome.runtime.getURL("src/render/mount.js")),
+        import(chrome.runtime.getURL("src/interact/forward.js")),
+      ]).then(([{ mountBoard }, { Forwarder }]) => {
         let mounted = null;
         const tryMount = () => {
           if (mounted) return;
           if (document.getElementById("game-canvas") && gameState.ready) {
             mounted = mountBoard(gameState);
-            if (mounted) { window.__catan3d.board = mounted; console.info(TAG, "3D board mounted"); }
+            if (mounted) {
+              window.__catan3d.board = mounted;
+              try {
+                const fwd = new Forwarder(mounted.scene, gameState, { send: sendApi });
+                window.__catan3d.forwarder = fwd;
+                console.info(TAG, "3D board + interaction mounted");
+              } catch (e) { console.warn(TAG, "forwarder init failed", e); }
+            }
           }
         };
         const iv = setInterval(() => { tryMount(); if (mounted) clearInterval(iv); }, 800);
