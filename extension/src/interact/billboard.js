@@ -54,16 +54,19 @@ export class ConfirmBillboard {
     // Confirm on CLICK (not pointerdown): the full press→release→click gesture must complete on
     // the billboard element itself. Confirming on pointerdown would hide the billboard mid-gesture,
     // and the trailing pointerup/click would then land on the board canvas underneath and re-fire
-    // its raycast handler — the "first house closes immediately" bug. We also stop the gesture's
-    // pointer events from reaching anything else, and stamp confirmedAt so the forwarder can
-    // suppress any stray click that still leaks through right after we hide.
+    // its raycast handler. We also stop the gesture's pointer events from reaching anything else,
+    // and FREEZE the billboard's position for the duration of the press so camera damping can't
+    // slide the plate out from under the cursor between pointerdown and click (the first-placement
+    // failure: on mount the camera is still settling, so the plate drifted and the click missed).
     const swallow = (e) => { e.preventDefault(); e.stopPropagation(); };
-    el.addEventListener("pointerdown", swallow, true);
+    el.addEventListener("pointerdown", (e) => { swallow(e); this._frozen = true; }, true);
     el.addEventListener("pointerup", swallow, true);
-    el.addEventListener("mousedown", swallow, true);
+    el.addEventListener("mousedown", (e) => { swallow(e); this._frozen = true; }, true);
     el.addEventListener("mouseup", swallow, true);
+    el.addEventListener("pointercancel", () => { this._frozen = false; }, true);
     el.addEventListener("click", (e) => {
       e.preventDefault(); e.stopPropagation();
+      this._frozen = false;
       if (this._confirming) return; this._confirming = true;
       const a = this._active; this.confirmedAt = Date.now(); this.hide();
       if (a && a.onConfirm) { try { a.onConfirm(); } catch (err) { console.warn("[catan3d] billboard confirm failed", err); } }
@@ -81,14 +84,28 @@ export class ConfirmBillboard {
    */
   show(world, kind, colorId, onConfirm, onCancel) {
     this._active = { world: new THREE.Vector3(world.x, world.y, world.z), onConfirm, onCancel };
+    // FIRST-PLACEMENT ROOT FIX: disable OrbitControls while the billboard is up. The click that
+    // OPENS the billboard is a pointerdown on the canvas, where OrbitControls calls
+    // setPointerCapture(canvas) — capturing the whole gesture to the canvas and (with damping)
+    // drifting the camera. On the first placement, with the billboard's box only just realized,
+    // that captured/drifting gesture makes the confirm-click miss. Disabling controls makes
+    // OrbitControls' onPointerDown early-return (no capture, no camera motion), so the billboard
+    // gets a clean, independent press→release every time. Re-enabled in hide().
+    try {
+      const c = this.scene && this.scene.controls;
+      if (c) { this._prevControlsEnabled = c.enabled; c.enabled = false; }
+      const dom = this.scene && this.scene.renderer && this.scene.renderer.domElement;
+      if (dom && dom.hasPointerCapture) { for (const id of [1, 0]) { try { if (dom.hasPointerCapture(id)) dom.releasePointerCapture(id); } catch {} } }
+    } catch {}
     // Show the plate IMMEDIATELY and position it, so it never lags behind the click — the piece
     // recolor (pieceDataUrl) is async and, uncached on the FIRST placement, would otherwise leave
-    // the billboard invisible for a beat (the "first house is broken" symptom). Fill the icon in
-    // when it resolves.
+    // the billboard invisible for a beat. Fill the icon in when it resolves.
     this.iconEl.src = "";
     this.el.style.display = "block";
     this.el.style.visibility = "visible";
+    this._frozen = false;
     this._tick();
+    void this.el.offsetWidth; // force synchronous layout so the plate has a live hit-region now
     if (!this._raf) this._loop();
     const token = (this._iconToken = (this._iconToken || 0) + 1);
     Promise.resolve(
@@ -102,8 +119,11 @@ export class ConfirmBillboard {
   hide() {
     const a = this._active;
     this._active = null;
+    this._frozen = false;
     this.el.style.display = "none";
     if (this._raf) { cancelAnimationFrame(this._raf); this._raf = 0; }
+    // Re-enable OrbitControls (disabled in show()) so the user can orbit again between placements.
+    try { const c = this.scene && this.scene.controls; if (c && this._prevControlsEnabled !== undefined) { c.enabled = this._prevControlsEnabled; this._prevControlsEnabled = undefined; } } catch {}
     return a;
   }
 
@@ -115,6 +135,10 @@ export class ConfirmBillboard {
 
   _tick() {
     if (!this._active) return;
+    // While the user is pressing the plate, DON'T reposition it — a moving target between
+    // pointerdown and click makes the release land off it. (Belt-and-suspenders alongside
+    // disabling OrbitControls in show(); covers any residual camera motion.)
+    if (this._frozen) return;
     const cam = this.scene.camera;
     const dom = this.scene.renderer.domElement;
     this._world.copy(this._active.world);
@@ -126,9 +150,16 @@ export class ConfirmBillboard {
     const y = (-this._world.y * 0.5 + 0.5) * rect.height + rect.top;
     this.el.style.left = `${x}px`;
     this.el.style.top = `${y - this.offsetPx}px`;
-    // hide if behind camera
-    this.el.style.visibility = this._world.z > 1 ? "hidden" : "visible";
+    // If the point is behind the camera we can't position it correctly, but an ACTIVE billboard
+    // must never become unclickable — clamp with visibility only when there is genuinely no valid
+    // projection, and keep it interactive otherwise. (Camera is disabled while active, so z stays
+    // valid in practice; this is a guard for edge cases.)
+    this.el.style.visibility = this._world.z > 1.5 ? "hidden" : "visible";
   }
 
-  dispose() { if (this._raf) cancelAnimationFrame(this._raf); if (this.el) this.el.remove(); }
+  dispose() {
+    if (this._raf) cancelAnimationFrame(this._raf);
+    try { const c = this.scene && this.scene.controls; if (c && this._prevControlsEnabled !== undefined) c.enabled = this._prevControlsEnabled; } catch {}
+    if (this.el) this.el.remove();
+  }
 }
