@@ -77,6 +77,47 @@
     }
   }
 
+  // Fire ONE synthetic click on Colonist's real #game-canvas the moment we enter a game. This
+  // primes Colonist's first-interaction / pointer-capture state so the FIRST real billboard
+  // placement works (the "first house won't place" bug). We aim at a hex-intersection-ish point
+  // (a legal corner projected to canvas pixels when available, else the board centre) and
+  // dispatch a full pointerdown→up→click gesture directly to the canvas element. Because it's a
+  // synthetic (untrusted) event on empty board space, Colonist ignores it for actual placement —
+  // it only warms the input path. Runs once per mount, guarded.
+  let _warmedUp = false;
+  function warmUpFirstClick() {
+    if (_warmedUp) return; _warmedUp = true;
+    const run = () => {
+      try {
+        const canvas = document.getElementById("game-canvas");
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width < 10 || rect.height < 10) return;
+        // Board centre — reliably over the middle hex, a valid intersection region. Precise
+        // targeting isn't needed for a warm-up; we only need Colonist's canvas to receive a click.
+        const px = rect.left + rect.width / 2, py = rect.top + rect.height / 2;
+        const common = { bubbles: true, cancelable: true, view: window, clientX: px, clientY: py, screenX: px, screenY: py, button: 0, buttons: 1, pointerId: 1, pointerType: "mouse", isPrimary: true, composed: true };
+        canvas.dispatchEvent(new PointerEvent("pointerover", common));
+        canvas.dispatchEvent(new PointerEvent("pointerenter", common));
+        canvas.dispatchEvent(new PointerEvent("pointermove", common));
+        canvas.dispatchEvent(new MouseEvent("mousemove", common));
+        canvas.dispatchEvent(new PointerEvent("pointerdown", common));
+        canvas.dispatchEvent(new MouseEvent("mousedown", common));
+        const up = { ...common, buttons: 0 };
+        canvas.dispatchEvent(new PointerEvent("pointerup", up));
+        canvas.dispatchEvent(new MouseEvent("mouseup", up));
+        canvas.dispatchEvent(new MouseEvent("click", up));
+        console.info(TAG, "warm-up click dispatched on #game-canvas @", Math.round(px), Math.round(py));
+      } catch (e) { console.warn(TAG, "warm-up click failed", e); }
+    };
+    // Run shortly after mount so Colonist's canvas + WebGL input are ready, and once more a beat
+    // later to cover slow game-load.
+    setTimeout(run, 400);
+    setTimeout(run, 1500);
+  }
+  // Re-arm the warm-up for the NEXT game (call when leaving a game / a fresh game starts).
+  function rearmWarmUp() { _warmedUp = false; }
+
   async function boot() {
     try {
       const [{ decodeFrame: df }, { GameState }, { DebugHUD }, { attachWatchdog }, settingsMod] = await Promise.all([
@@ -110,6 +151,12 @@
         try { chrome.runtime.sendMessage({ type: "CATAN3D_STATUS", connected: !!gameState.ready }); } catch {}
       };
       gameState.subscribe(reportStatus);
+
+      // A fresh full snapshot = we entered/joined/resumed a game (even one in progress). Re-arm the
+      // warm-up click so the first-placement fix applies to every game we enter, not just the first.
+      gameState.subscribe((_s, evt) => {
+        if (evt && evt.kind === "snapshot") { rearmWarmUp(); if (board) warmUpFirstClick(); }
+      });
       reportStatus();
 
       // The popup queries live status and issues commands through this message channel.
@@ -170,6 +217,11 @@
                 const renderHud = () => { try { gameHud.update(gameModel.snapshot); } catch (e) {} };
                 gameModel.subscribe(renderHud); renderHud();
                 console.info(TAG, "3D board + HUD + interaction mounted");
+                // WARM-UP: fire one synthetic click on Colonist's real board canvas as soon as we
+                // enter a game. This primes Colonist's first-interaction input state so the FIRST
+                // real billboard placement is clickable (empirically fixes the "first house won't
+                // place" bug). Harmless: it's a click on empty board space, changes no game state.
+                warmUpFirstClick();
               } catch (e) { console.warn(TAG, "forwarder/hud init failed", e); }
               applySettings(settings); // apply opacity/rotate/markers to the fresh scene
             }

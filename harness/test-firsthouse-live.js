@@ -67,7 +67,19 @@ const mounted = await page.evaluate(async (base) => {
     const bb = new ConfirmBillboard(board.overlay, board.scene);
     fwd.setBillboard(bb);
     window.__T = { board, fwd, bb, state };
-    return "mounted";
+    // WARM-UP CLICK (mirrors content.js warmUpFirstClick): fire one synthetic click on the real
+    // #game-canvas to prime Colonist's first-interaction state so the first billboard placement works.
+    (function warmUp() {
+      const canvas = document.getElementById("game-canvas"); if (!canvas) return;
+      const r = canvas.getBoundingClientRect(); const px = r.left + r.width / 2, py = r.top + r.height / 2;
+      const c = { bubbles: true, cancelable: true, view: window, clientX: px, clientY: py, screenX: px, screenY: py, button: 0, buttons: 1, pointerId: 1, pointerType: "mouse", isPrimary: true, composed: true };
+      canvas.dispatchEvent(new PointerEvent("pointerover", c)); canvas.dispatchEvent(new PointerEvent("pointermove", c)); canvas.dispatchEvent(new MouseEvent("mousemove", c));
+      canvas.dispatchEvent(new PointerEvent("pointerdown", c)); canvas.dispatchEvent(new MouseEvent("mousedown", c));
+      const up = { ...c, buttons: 0 };
+      canvas.dispatchEvent(new PointerEvent("pointerup", up)); canvas.dispatchEvent(new MouseEvent("mouseup", up)); canvas.dispatchEvent(new MouseEvent("click", up));
+      window.__warmedUp = true;
+    })();
+    return "mounted warmed=" + !!window.__warmedUp;
   } catch (e) { return "ERR:" + e.message + " " + (e.stack || "").slice(0, 200); }
 }, base);
 log("mount:", mounted);
