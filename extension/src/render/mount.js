@@ -20,25 +20,34 @@ export function mountBoard(state, opts = {}) {
   if (!host) return null;
 
   // Fixed overlay pinned to the canvas's viewport rect (updated every frame).
+  //
+  // The overlay is a CLICK-SHIELD: pointer-events:auto on the overlay itself so it CATCHES every
+  // click/drag over the board region — nothing leaks through to Colonist's WebGL #game-canvas
+  // underneath (which would cause accidental board interaction). Our own interactive layers (the
+  // 3D canvas, the confirm billboard, the HUD's .pe controls) sit on top and handle their own
+  // clicks; anything they don't handle is absorbed by the shield instead of reaching Colonist.
   const overlay = document.createElement("div");
   overlay.id = "catan3d-overlay";
   Object.assign(overlay.style, {
     position: "fixed",
     left: "0px", top: "0px", width: "0px", height: "0px",
     zIndex: "2147483000",
-    pointerEvents: "none",
+    pointerEvents: "auto",   // shield: catch all pointer events in the board rect
     overflow: "hidden",
+    background: "transparent",
   });
   document.body.appendChild(overlay);
 
-  // Hide Colonist's canvas visually but keep it laid out + interactive underneath.
-  // (visibility:hidden keeps layout so getBoundingClientRect stays valid.)
-  const prevVisibility = host.style.visibility;
-  host.style.visibility = "hidden";
-  // NB: we deliberately do NOT hide Colonist's #ui-game layer — it still owns the modal flows we
-  // don't rebuild (trade panel, discard-on-7, robber/steal prompts, dialogs). Our opaque HUD sits
-  // above it (overlay z-index) and covers the static player list / card tray; Colonist's popups
-  // open on top when needed.
+  // We do NOT mutate Colonist's #game-canvas at all — no visibility:hidden, no style changes on
+  // their render surface. Our opaque 3D board simply COVERS it (the scene renders a solid
+  // background, so Colonist's canvas is fully obscured beneath our overlay). Touching Colonist's
+  // own DOM nodes can trip their consistency checks; covering instead of hiding avoids that.
+  //
+  // Colonist's modal flows we don't rebuild (trade panel, discard-on-7, robber/steal prompts,
+  // dialogs) render in #dialog-container-root at the body level. Raise that container above our
+  // shield ONCE so those dialogs stay fully clickable on top of the overlay. (This is a benign
+  // z-index on a container meant to be topmost — not a mutation of the board/render surface.)
+  ensureDialogsAboveOverlay();
 
   const rect0 = host.getBoundingClientRect();
   const w0 = Math.max(1, Math.round(rect0.width));
@@ -121,7 +130,7 @@ export function mountBoard(state, opts = {}) {
       window.removeEventListener("resize", onResize);
       scene.dispose();
       overlay.remove();
-      if (host.isConnected) host.style.visibility = prevVisibility;
+      // We never mutated Colonist's canvas, so there is nothing to restore on it.
     },
   };
   return handle;
@@ -134,4 +143,33 @@ function locateGameCanvas() {
   const canvases = [...document.querySelectorAll("canvas")].filter((c) => c.width > 400 && c.height > 300);
   canvases.sort((a, b) => b.width * b.height - a.width * a.height);
   return canvases[0] || null;
+}
+
+// Our click-shield overlay sits at z-index 2147483000. Colonist's modal dialogs + notifications
+// (trade panel, discard, robber/steal prompts, reconnect banner) render in these body-level
+// containers. Raise them ABOVE the shield so they stay clickable on top of the overlay — the user
+// still needs those native flows. Applied once, idempotently, and re-checked as containers appear.
+function ensureDialogsAboveOverlay() {
+  const OVERLAY_Z = 2147483000;
+  const ABOVE = String(OVERLAY_Z + 10);
+  const ids = ["dialog-container-root", "top-notification-container", "corner-notification-container"];
+  const bump = () => {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el && el.dataset.c3dRaised !== "1") {
+        // only set position if static (z-index needs a positioned element)
+        if (getComputedStyle(el).position === "static") el.style.position = "relative";
+        el.style.zIndex = ABOVE;
+        el.dataset.c3dRaised = "1";
+      }
+    }
+  };
+  bump();
+  // Colonist creates/replaces these containers lazily; watch the body briefly to catch them.
+  try {
+    const mo = new MutationObserver(bump);
+    mo.observe(document.body, { childList: true, subtree: false });
+    // stop watching after a while; dialogs that appear later still get bumped on next mount/open.
+    setTimeout(() => { try { mo.disconnect(); } catch {} }, 20000);
+  } catch {}
 }
