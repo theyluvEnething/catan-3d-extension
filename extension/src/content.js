@@ -44,44 +44,54 @@
   let gameHud = null;     // faithful rebuilt HUD
   const onSettingsCbs = [];
 
-  // Dev-card action ids are NOT yet verified from live capture (the probe recorded only incoming
-  // diffs, not our outgoing buy/play frames). Keep them null so we never emit a guessed action;
-  // the confirm billboard still shows (correct UX), but the send is skipped + logged until known.
-  const ACTION_BUY_DEV = null;   // TODO: capture the outgoing buy-dev frame to fill this in.
+  // Buy-dev + roll have NO verified game-channel action id (buy-dev was exhaustively not found;
+  // roll is a Colonist client shortcut). Instead of emitting a guessed action we click Colonist's
+  // OWN real DOM buttons — ordinary buttons respond to a synthetic click (unlike the WebGL canvas),
+  // so Colonist's client sends the correct in-sequence frame itself. colonistButtons.js does this;
+  // it's imported lazily in boot() and stashed here.
+  let colonistBtns = null; // { rollDice, clickColonistButton, ... }
 
   // Handle a click on a rebuilt HUD control. Build buttons arm 3D placement (then the billboard
-  // confirms); dev buys after a confirm; end-turn/trade/roll route to verified sends or shortcuts.
+  // confirms); dev buys after a confirm; end-turn = verified send; roll + trade drive Colonist's
+  // own buttons.
   function onHudAction(kind, bb) {
-    if (!forwarder) return;
     switch (kind) {
       case "settlement": case "city": case "road": {
+        if (!forwarder) return;
         const ok = forwarder.armBuild(kind);
         if (gameHud) gameHud.setArmed(kind);
         if (!ok) console.info(TAG, `no legal ${kind} targets right now`);
         break;
       }
+      case "roll": {
+        // Roll the dice via Colonist's own #roll-dice-button (no verified WS action for roll).
+        const ok = colonistBtns?.rollDice?.();
+        console.info(TAG, ok ? "roll: clicked Colonist roll button" : "roll: could not find roll control");
+        break;
+      }
       case "endturn": {
         // end-turn / pass = action 6 (verified). Clear any armed build first.
-        forwarder.disarm(); if (gameHud) gameHud.setArmed(null);
+        forwarder?.disarm(); if (gameHud) gameHud.setArmed(null);
         window.__catan3d.send?.sendGameAction(6, true);
         break;
       }
       case "dev": {
-        // Buy a dev card — show the confirm billboard (the "are you sure" second click). Only
-        // actually send once the buy-dev action id is verified; otherwise log the intent.
+        // Buy a dev card. No verified WS action id → on confirm we click Colonist's own
+        // #action-button-buy-dev-card (its React handler sends the correct frame). Keep the
+        // confirm billboard as the "are you sure" second click.
         if (!board?.scene) break;
         bb.show({ x: 0, y: 1.2, z: 0 }, "dev", gameModel?.snapshot?.us,
           () => {
-            if (ACTION_BUY_DEV != null) window.__catan3d.send?.sendGameAction(ACTION_BUY_DEV, true);
-            else console.info(TAG, "buy-dev confirmed (action id not yet verified — not sent)");
+            const ok = colonistBtns?.clickColonistButton?.("buyDev");
+            console.info(TAG, ok ? "buy-dev: clicked Colonist buy-dev button" : "buy-dev: button not found");
           },
           () => {});
         break;
       }
       case "trade": {
-        // Trade UI is Colonist's own (unsolved bank-trade); surface Colonist's panel by
-        // temporarily un-hiding its canvas UI is out of scope — log for now.
-        console.info(TAG, "trade: use Colonist's native trade panel (bank-trade unsolved)");
+        // Open Colonist's own trade panel (bank-trade has no solved WS action).
+        const ok = colonistBtns?.clickColonistButton?.("trade");
+        console.info(TAG, ok ? "trade: opened Colonist trade panel" : "trade: button not found");
         break;
       }
       // Icon rail — settings opens the popup conceptually; others are cosmetic no-ops here.
@@ -137,11 +147,15 @@
       // thin browser ADAPTER: it feeds inbound frames to engine.ingest and transmits the engine's
       // outbound bytes on the real socket via the MAIN-world interceptor. The engine owns
       // decode/state/watchdog/legal/tracker/channel/sequence.
-      const [{ createEngine, decodeOutgoing }, { DebugHUD }, settingsMod] = await Promise.all([
+      const [{ createEngine, decodeOutgoing }, { DebugHUD }, settingsMod, colonistBtnsMod] = await Promise.all([
         import(chrome.runtime.getURL("catan-interface/index.js")),
         import(chrome.runtime.getURL("src/render/hud.js")),
         import(chrome.runtime.getURL("src/settings.js")),
+        import(chrome.runtime.getURL("src/interact/colonistButtons.js")),
       ]);
+      colonistBtns = colonistBtnsMod; // roll / buy-dev / trade drive Colonist's own DOM buttons
+      window.__catan3d = window.__catan3d || {};
+      window.__catan3d.colonistBtns = colonistBtnsMod;
 
       // The engine's `send` transmits raw encoded bytes to the MAIN world, which owns the socket.
       const transmit = (bytes) => {

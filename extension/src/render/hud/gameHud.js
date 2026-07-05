@@ -79,6 +79,7 @@ export class GameHud {
         <div class="c3d-tray">
           <div class="c3d-hand pe"></div>
           <div class="c3d-actions pe">
+            ${this._rollBtn()}
             ${this._actBtn("trade", "icon_trade")}
             ${this._actBtn("dev", null, "card_devcardback")}
             ${this._actBtn("road", null, null, "road")}
@@ -119,6 +120,13 @@ export class GameHud {
   }
 
   _railBtn(kind, ico) { return `<div class="ico pe" data-ico="${ico}" title="${kind}"><img alt="${kind}"></div>`; }
+
+  // The roll-dice button: a die on the light-blue plate. Only shown when it's our turn and the
+  // dice have not been thrown (hidden otherwise). Clicking it drives Colonist's own roll control.
+  _rollBtn() {
+    return `<button class="c3d-act c3d-roll pe" data-act="roll" title="Roll dice" hidden>
+      <img class="roll-die" alt="roll"><span class="roll-lbl">Roll</span></button>`;
+  }
 
   // Action button: either an icon (icon_*), a dev-card back, or a recolored piece (filled in update()).
   _actBtn(act, icon, cardAsset, piece) {
@@ -255,18 +263,44 @@ export class GameHud {
       if (badge != null) { bd.hidden = false; bd.textContent = badge; } else { bd.hidden = true; }
     };
     const yourTurn = snap.yourTurn;
-    const mainPhase = yourTurn && snap.turnState !== 0; // not during setup
-    setBtn("trade", yourTurn);
-    setBtn("dev", mainPhase && canAfford.dev, you ? you.devHandCount : null);
-    setBtn("road", yourTurn && canAfford.road);
-    setBtn("settlement", yourTurn && canAfford.settlement);
-    setBtn("city", mainPhase && canAfford.city);
-    setBtn("endturn", yourTurn);
+    const setup = snap.turnState === 0;
+    const mainPhase = yourTurn && !setup; // not during setup
+    // "Roll" phase = our turn, main game (not setup), dice not yet thrown.
+    const needRoll = yourTurn && !setup && snap.dice && snap.dice.thrown === false;
+    // After rolling (or in setup) the build/trade/dev actions apply.
+    const canBuild = yourTurn && (setup || (snap.dice && snap.dice.thrown));
+
+    this._renderRollBtn(needRoll, snap);
+
+    // During setup you place a settlement/road for FREE (ignore affordability); in the main phase
+    // gate on resources. Only enable build actions once you've rolled (or in setup).
+    setBtn("trade", mainPhase && snap.dice && snap.dice.thrown);
+    setBtn("dev", mainPhase && snap.dice && snap.dice.thrown && canAfford.dev, you ? you.devHandCount : null);
+    setBtn("road", canBuild && (setup || canAfford.road));
+    setBtn("settlement", canBuild && (setup || canAfford.settlement));
+    setBtn("city", mainPhase && snap.dice && snap.dice.thrown && canAfford.city);
+    setBtn("endturn", mainPhase && snap.dice && snap.dice.thrown);
     // cost hints
     this._setCost("road", "🪵1 🧱1");
     this._setCost("settlement", "🪵1 🧱1 🐑1 🌾1");
     this._setCost("city", "🌾2 ⛏3");
     this._setCost("dev", "🐑1 🌾1 ⛏1");
+  }
+
+  // Show/hide + fill the roll button. When it's time to roll we surface it (with a random-ish die
+  // face) and pulse it; otherwise hide it.
+  _renderRollBtn(needRoll, snap) {
+    const b = this.actionsEl.querySelector('.c3d-act[data-act="roll"]');
+    if (!b) return;
+    b.hidden = !needRoll;
+    b.classList.toggle("pulse", !!needRoll);
+    b.style.setProperty("--plate", `url("${this.plateUrl}")`);
+    const img = b.querySelector(".roll-die");
+    if (img && !img.dataset.filled) {
+      // a static die face for the button (the real rolled faces show in the status row)
+      img.src = assetUrl(diceAsset(5)) || "";
+      img.dataset.filled = "1";
+    }
   }
 
   _setCost(act, txt) { const c = this.actionsEl.querySelector(`.c3d-act[data-act="${act}"] .cost`); if (c) c.textContent = txt; }

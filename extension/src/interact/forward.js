@@ -16,7 +16,7 @@
  * Placement CONTEXT (what a click means) comes from the state model's phase/turn info.
  */
 import * as THREE from "../../vendor/three.module.js";
-import { hexCenter, cornerPosExact, edgePos } from "../render/boardGeometry.js";
+import { hexCenter, cornerPosExact, edgePos, edgeCorners } from "../render/boardGeometry.js";
 import {
   legalSettlementCorners, legalCityCorners, legalRoadEdges, legalRobberHexes,
 } from "./legal.js";
@@ -74,12 +74,18 @@ export class Forwarder {
   }
 
   // Invisible pickable meshes at every corner, edge, and hex, tagged with their coords.
+  //
+  // Hit targets are deliberately GENEROUS (a click near a slot should register): corners are big
+  // spheres, hexes are full-tile discs, and — critically — EDGES are fat boxes ORIENTED ALONG the
+  // edge (matching how the real road bar is drawn, `_makeRoad`). The previous edge target was a
+  // small AXIS-ALIGNED box, so diagonal edges presented almost no clickable area where the user was
+  // aiming — that made roads feel unplaceable while corner-based settlements worked fine. Orienting
+  // + enlarging the box fixes that.
   _buildPickTargets() {
     const st = this.state;
     const group = new THREE.Group();
     group.name = "pick-targets";
-    const cornerGeo = new THREE.SphereGeometry(0.16, 8, 6);
-    const edgeGeo = new THREE.BoxGeometry(0.34, 0.12, 0.16);
+    const cornerGeo = new THREE.SphereGeometry(0.2, 10, 8);
     const hexGeo = new THREE.CircleGeometry(0.5, 6);
     const invisible = new THREE.MeshBasicMaterial({ visible: false });
 
@@ -92,8 +98,21 @@ export class Forwarder {
     }
     for (const e of st.edges) {
       const { u, v } = edgePos(e.x, e.y, e.z);
+      // Orient + size the hitbox along the edge, like the visible road. Compute the edge direction
+      // from its two endpoint corners (same math as _makeRoad in scene.js).
+      let angle = 0, len = 0.5;
+      try {
+        const [a, b] = edgeCorners(e.x, e.y, e.z);
+        const pa = cornerPosExact(a.x, a.y, a.z), pb = cornerPosExact(b.x, b.y, b.z);
+        const dx = pb.u - pa.u, dz = pb.v - pa.v;
+        len = Math.hypot(dx, dz) || 0.5;
+        angle = -Math.atan2(dz, dx);
+      } catch {}
+      // Fat box: full edge length, tall + wide enough to be an easy click target from the camera.
+      const edgeGeo = new THREE.BoxGeometry(len * 0.9, 0.5, 0.34);
       const m = new THREE.Mesh(edgeGeo, invisible.clone());
-      m.position.set(u, 0.45, v);
+      m.position.set(u, 0.55, v);
+      m.rotation.y = angle;
       m.userData = { kind: "edge", coord: e, u, v };
       group.add(m); this._pickers.edges.push(m);
     }
