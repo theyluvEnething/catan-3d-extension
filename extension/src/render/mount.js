@@ -35,6 +35,10 @@ export function mountBoard(state, opts = {}) {
   // (visibility:hidden keeps layout so getBoundingClientRect stays valid.)
   const prevVisibility = host.style.visibility;
   host.style.visibility = "hidden";
+  // NB: we deliberately do NOT hide Colonist's #ui-game layer — it still owns the modal flows we
+  // don't rebuild (trade panel, discard-on-7, robber/steal prompts, dialogs). Our opaque HUD sits
+  // above it (overlay z-index) and covers the static player list / card tray; Colonist's popups
+  // open on top when needed.
 
   const rect0 = host.getBoundingClientRect();
   const w0 = Math.max(1, Math.round(rect0.width));

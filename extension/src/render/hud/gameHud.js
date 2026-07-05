@@ -15,6 +15,28 @@ import { RES_ORDER, RES_ASSET, DEV_ASSET } from "../../state/gameModel.js";
 // action id -> asset name for tray buttons.
 const RES_LABEL = { 1: "wood", 2: "brick", 3: "sheep", 4: "wheat", 5: "ore" };
 
+// The HUD is styled entirely by gameHud.css. In the extension the content script runs in the
+// ISOLATED world but appends the HUD into the page DOM, so the stylesheet must be injected as a
+// <style> tag (a content_scripts.css entry wouldn't apply to the isolated-world-inserted nodes
+// reliably, and a <link> to a web-accessible URL is fetch-gated). We fetch the CSS text once and
+// inline it. Idempotent — guarded by a marker id.
+let _cssPromise = null;
+function ensureHudCss() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("c3d-hud-css")) return;
+  const cssUrl = (typeof chrome !== "undefined" && chrome.runtime?.getURL)
+    ? chrome.runtime.getURL("src/render/hud/gameHud.css")
+    : new URL("./gameHud.css", import.meta.url).href;
+  // Insert a placeholder immediately (marks as loading; prevents duplicate fetches).
+  const style = document.createElement("style");
+  style.id = "c3d-hud-css";
+  (document.head || document.documentElement).appendChild(style);
+  if (!_cssPromise) {
+    _cssPromise = fetch(cssUrl).then((r) => r.text()).then((css) => { style.textContent = css; })
+      .catch((e) => { console.warn("[catan3d/hud] failed to load gameHud.css", e); });
+  }
+}
+
 export class GameHud {
   /**
    * @param {HTMLElement} host  the overlay element (position:absolute inset:0 within it).
@@ -30,6 +52,7 @@ export class GameHud {
     this.armed = null;       // currently-armed action ('settlement'|'road'|'city'|null)
     this._pieceCache = new Map();
     this.el = null;
+    ensureHudCss();          // the HUD is styled entirely via gameHud.css — inject it once.
     this._build();
   }
 

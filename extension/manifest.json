@@ -36,6 +36,7 @@
     {
       "matches": ["https://colonist.io/*", "https://www.colonist.io/*"],
       "js": ["src/content.js"],
+      "css": ["src/render/hud/gameHud.css"],
       "run_at": "document_start",
       "world": "ISOLATED",
       "all_frames": true
